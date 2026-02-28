@@ -257,15 +257,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       ? customerData.phone
       : '0' + customerData.phone.replace(/^\+95/, '');
 
-    console.log('[Auth] Registering new customer via Edge Function:', customerData.name, localPhone);
+    console.log('[Auth] Registering new customer via Edge Function:', customerData.name);
 
     const { data, error } = await supabase.functions.invoke('register-customer', {
       body: {
-        name: customerData.name,
-        phone: localPhone,
+        full_name: customerData.name,
         township: customerData.township,
         address: customerData.address,
-        auth_user_id: user.id,
       },
     });
 
@@ -274,9 +272,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       throw new Error(error.message || 'Registration failed');
     }
 
-    const responseData = data as { customer?: Record<string, unknown> } | null;
-    if (!responseData?.customer) {
-      console.log('[Auth] Edge Function returned no customer data');
+    const responseData = data as { ok?: boolean; customer?: Record<string, unknown> } | null;
+    if (!responseData?.ok || !responseData?.customer) {
+      console.log('[Auth] Edge Function returned no customer data:', JSON.stringify(data));
       throw new Error('Registration failed — no customer data returned');
     }
 
