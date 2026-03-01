@@ -30,7 +30,7 @@ import { OrderStatus } from '@/types';
 
 const STATUS_STEPS: { key: OrderStatus; label: string; labelMM: string }[] = [
   { key: 'new', label: 'Order Placed', labelMM: 'မှာယူပြီး' },
-  { key: 'confirmed', label: 'Received by Delivery Agent', labelMM: 'ကိုယ်စားလှယ်လက်ခံပြီး' },
+  { key: 'in_progress', label: 'Received by Delivery Agent', labelMM: 'ကိုယ်စားလှယ်လက်ခံပြီး' },
   { key: 'dispatched', label: 'On the Way', labelMM: 'ပို့ဆောင်နေဆဲ' },
   { key: 'delivered', label: 'Delivered', labelMM: 'ပို့ဆောင်ပြီး' },
 ];
