@@ -124,7 +124,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
         return stored ? JSON.parse(stored) as Order[] : [];
       }
 
-      if (data && data.length > 0) {
+      if (data) {
         const mapped: Order[] = (data as SupabaseOrderRow[]).map(mapSupabaseOrderToOrder);
         console.log('[Orders] Fetched orders from Supabase:', mapped.length);
         await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(mapped));
@@ -268,7 +268,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
   }, [orders]);
 
   const getActiveOrder = useCallback(() => {
-    return orders.find(o => ['new', 'confirmed', 'dispatched'].includes(o.status)) || null;
+    return orders.find(o => ['new', 'in_progress', 'confirmed', 'dispatched'].includes(o.status)) || null;
   }, [orders]);
 
   const markNotificationRead = useCallback(async (_id: string) => {
