@@ -2,9 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { supabase, SupabaseSession, SupabaseUser } from '@/lib/supabase';
 import { Customer, CustomerLinkingState, SavedAddress } from '@/types';
-import type { Session, User } from '@supabase/supabase-js';
 
 const ACTIVE_CUSTOMER_KEY = 'anygas_active_customer';
 const ADDRESSES_KEY = 'anygas_addresses';
@@ -26,8 +25,8 @@ function authPhoneToLocalPhone(authPhone: string): string {
 
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const queryClient = useQueryClient();
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<SupabaseSession | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
   const [matchedCustomers, setMatchedCustomers] = useState<Customer[]>([]);
@@ -91,7 +90,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
 
       if (data && data.length > 0) {
-        const mapped: SavedAddress[] = data.map((a: Record<string, unknown>) => ({
+        const mapped: SavedAddress[] = (data as Record<string, unknown>[]).map((a) => ({
           id: a.id as string,
           label: (a.label as string) || '',
           address: (a.address as string) || '',
@@ -199,7 +198,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     const { error } = await supabase.auth.signInWithOtp({ phone: formattedPhone });
     if (error) {
       console.log('[Auth] OTP send error:', error.message);
-      throw error;
+      throw new Error(error.message);
     }
     console.log('[Auth] OTP sent successfully');
   }, []);
@@ -215,7 +214,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     });
     if (error) {
       console.log('[Auth] OTP verify error:', error.message);
-      throw error;
+      throw new Error(error.message);
     }
     console.log('[Auth] OTP verified, session:', data.session ? 'yes' : 'no');
 
@@ -324,7 +323,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
     if (customerId) {
       console.log('[Auth] Adding address to customer_addresses:', address.label);
-      const { error } = await supabase.from('customer_addresses').insert({
+      const { error } = await supabase.fromInsert('customer_addresses', {
         id: newAddress.id,
         customer_id: customerId,
         label: address.label,

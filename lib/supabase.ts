@@ -1,14 +1,425 @@
-import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const SESSION_KEY = 'anygas_supabase_session';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-});
+export interface SupabaseUser {
+  id: string;
+  phone?: string;
+  email?: string;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
+export interface SupabaseSession {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+  expires_at?: number;
+  token_type: string;
+  user: SupabaseUser;
+}
+
+type AuthEvent = 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED' | 'INITIAL_SESSION';
+type AuthListener = (event: AuthEvent, session: SupabaseSession | null) => void;
+
+const authListeners: Set<AuthListener> = new Set();
+let currentSession: SupabaseSession | null = null;
+
+function notifyListeners(event: AuthEvent, session: SupabaseSession | null) {
+  authListeners.forEach((listener) => {
+    try {
+      listener(event, session);
+    } catch (e) {
+      console.log('[Supabase] Auth listener error:', e);
+    }
+  });
+}
+
+function getAuthHeaders(token?: string): Record<string, string> {
+  return {
+    'apikey': SUPABASE_ANON_KEY,
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
+  };
+}
+
+async function getAccessToken(): Promise<string | null> {
+  if (currentSession?.access_token) {
+    return currentSession.access_token;
+  }
+  try {
+    const stored = await AsyncStorage.getItem(SESSION_KEY);
+    if (stored) {
+      const session = JSON.parse(stored) as SupabaseSession;
+      currentSession = session;
+      return session.access_token;
+    }
+  } catch (e) {
+    console.log('[Supabase] Failed to get stored session:', e);
+  }
+  return null;
+}
+
+interface QueryResult<T = unknown> {
+  data: T | null;
+  error: { message: string; code?: string } | null;
+}
+
+class PostgrestFilterBuilder<T = unknown> {
+  private url: string;
+  private headers: Record<string, string>;
+  private method: string;
+  private body: unknown | null;
+  private filters: string[] = [];
+  private orderClauses: string[] = [];
+  private limitValue: number | null = null;
+  private selectColumns: string = '*';
+  private preferHeader: string = '';
+
+  constructor(
+    baseUrl: string,
+    table: string,
+    headers: Record<string, string>,
+    method: string,
+    body?: unknown,
+  ) {
+    this.url = `${baseUrl}/rest/v1/${table}`;
+    this.headers = { ...headers };
+    this.method = method;
+    this.body = body ?? null;
+    if (method === 'POST') {
+      this.preferHeader = 'return=representation';
+    }
+    if (method === 'PATCH') {
+      this.preferHeader = 'return=representation';
+    }
+  }
+
+  select(columns: string = '*'): this {
+    this.selectColumns = columns;
+    return this;
+  }
+
+  eq(column: string, value: string | number | boolean): this {
+    this.filters.push(`${column}=eq.${value}`);
+    return this;
+  }
+
+  is(column: string, value: null): this {
+    this.filters.push(`${column}=is.${value}`);
+    return this;
+  }
+
+  lte(column: string, value: number): this {
+    this.filters.push(`${column}=lte.${value}`);
+    return this;
+  }
+
+  order(column: string, opts?: { ascending?: boolean }): this {
+    const dir = opts?.ascending === false ? 'desc' : 'asc';
+    this.orderClauses.push(`${column}.${dir}`);
+    return this;
+  }
+
+  limit(count: number): this {
+    this.limitValue = count;
+    return this;
+  }
+
+  async then<TResult = QueryResult<T[]>>(
+    resolve: (value: QueryResult<T[]>) => TResult,
+    reject?: (reason: unknown) => TResult,
+  ): Promise<TResult> {
+    try {
+      const result = await this.execute();
+      return resolve(result as QueryResult<T[]>);
+    } catch (e) {
+      if (reject) return reject(e);
+      throw e;
+    }
+  }
+
+  private async execute(): Promise<QueryResult<T[]>> {
+    try {
+      const params: string[] = [];
+      if (this.method === 'GET') {
+        params.push(`select=${encodeURIComponent(this.selectColumns)}`);
+      }
+      this.filters.forEach((f) => params.push(f));
+      if (this.orderClauses.length > 0) {
+        params.push(`order=${this.orderClauses.join(',')}`);
+      }
+      if (this.limitValue !== null) {
+        params.push(`limit=${this.limitValue}`);
+      }
+
+      const queryString = params.length > 0 ? `?${params.join('&')}` : '';
+      const fullUrl = `${this.url}${queryString}`;
+
+      const fetchHeaders = { ...this.headers };
+      if (this.preferHeader) {
+        fetchHeaders['Prefer'] = this.preferHeader;
+      }
+
+      const fetchOptions: RequestInit = {
+        method: this.method,
+        headers: fetchHeaders,
+      };
+      if (this.body && (this.method === 'POST' || this.method === 'PATCH')) {
+        fetchOptions.body = JSON.stringify(this.body);
+      }
+
+      console.log('[Supabase REST]', this.method, fullUrl);
+      const response = await fetch(fullUrl, fetchOptions);
+      const text = await response.text();
+
+      if (!response.ok) {
+        console.log('[Supabase REST] Error:', response.status, text);
+        let errorMsg = `HTTP ${response.status}`;
+        try {
+          const errJson = JSON.parse(text);
+          errorMsg = errJson.message || errJson.error || errorMsg;
+        } catch {}
+        return { data: null, error: { message: errorMsg } };
+      }
+
+      if (!text || text.trim() === '') {
+        return { data: [] as unknown as T[], error: null };
+      }
+
+      const data = JSON.parse(text);
+      return { data: Array.isArray(data) ? data : [data], error: null };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      console.log('[Supabase REST] Fetch error:', message);
+      return { data: null, error: { message } };
+    }
+  }
+}
+
+class SupabaseRestClient {
+  auth = {
+    getSession: async (): Promise<{ data: { session: SupabaseSession | null } }> => {
+      try {
+        const stored = await AsyncStorage.getItem(SESSION_KEY);
+        if (stored) {
+          const session = JSON.parse(stored) as SupabaseSession;
+          currentSession = session;
+          console.log('[Supabase] Restored session for user:', session.user?.id);
+          return { data: { session } };
+        }
+      } catch (e) {
+        console.log('[Supabase] getSession error:', e);
+      }
+      return { data: { session: null } };
+    },
+
+    signInWithOtp: async (params: { phone: string }): Promise<{ error: { message: string } | null }> => {
+      try {
+        console.log('[Supabase] Sending OTP to:', params.phone);
+        const response = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ phone: params.phone }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          const msg = err.msg || err.message || err.error || `OTP failed (${response.status})`;
+          console.log('[Supabase] OTP send error:', msg);
+          return { error: { message: msg } };
+        }
+        console.log('[Supabase] OTP sent successfully');
+        return { error: null };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Network error';
+        return { error: { message } };
+      }
+    },
+
+    verifyOtp: async (params: {
+      phone: string;
+      token: string;
+      type: string;
+    }): Promise<{
+      data: { session: SupabaseSession | null; user: SupabaseUser | null };
+      error: { message: string } | null;
+    }> => {
+      try {
+        console.log('[Supabase] Verifying OTP for:', params.phone);
+        const response = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            phone: params.phone,
+            token: params.token,
+            type: params.type,
+          }),
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          const msg = result.msg || result.message || result.error || `Verify failed (${response.status})`;
+          console.log('[Supabase] OTP verify error:', msg);
+          return { data: { session: null, user: null }, error: { message: msg } };
+        }
+
+        const session: SupabaseSession | null = result.access_token
+          ? {
+              access_token: result.access_token,
+              refresh_token: result.refresh_token,
+              expires_in: result.expires_in,
+              expires_at: result.expires_at,
+              token_type: result.token_type || 'bearer',
+              user: result.user,
+            }
+          : null;
+
+        if (session) {
+          currentSession = session;
+          await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+          console.log('[Supabase] Session stored, user:', session.user?.id);
+          notifyListeners('SIGNED_IN', session);
+        }
+
+        return {
+          data: { session, user: result.user || null },
+          error: null,
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Network error';
+        return { data: { session: null, user: null }, error: { message } };
+      }
+    },
+
+    signOut: async (): Promise<{ error: { message: string } | null }> => {
+      try {
+        const token = await getAccessToken();
+        if (token) {
+          await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${token}`,
+            },
+          }).catch(() => {});
+        }
+        currentSession = null;
+        await AsyncStorage.removeItem(SESSION_KEY);
+        notifyListeners('SIGNED_OUT', null);
+        console.log('[Supabase] Signed out');
+        return { error: null };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Sign out error';
+        return { error: { message } };
+      }
+    },
+
+    onAuthStateChange: (callback: (event: string, session: SupabaseSession | null) => void) => {
+      const listener: AuthListener = (event, session) => callback(event, session);
+      authListeners.add(listener);
+      return {
+        data: {
+          subscription: {
+            unsubscribe: () => {
+              authListeners.delete(listener);
+            },
+          },
+        },
+      };
+    },
+  };
+
+  functions = {
+    invoke: async (
+      functionName: string,
+      options?: { body?: unknown },
+    ): Promise<{ data: unknown; error: { message: string } | null }> => {
+      try {
+        const token = await getAccessToken();
+        const url = `${SUPABASE_URL}/functions/v1/${functionName}`;
+        console.log('[Supabase] Invoking function:', functionName);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
+          },
+          body: options?.body ? JSON.stringify(options.body) : undefined,
+        });
+
+        const text = await response.text();
+        let data: unknown = null;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = text;
+        }
+
+        if (!response.ok) {
+          const errData = data as Record<string, unknown> | null;
+          const msg =
+            (errData && typeof errData === 'object' && ((errData.error as string) || (errData.message as string))) ||
+            `Function error (${response.status})`;
+          console.log('[Supabase] Function error:', msg);
+          return { data: null, error: { message: String(msg) } };
+        }
+
+        console.log('[Supabase] Function success:', functionName);
+        return { data, error: null };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Network error';
+        return { data: null, error: { message } };
+      }
+    },
+  };
+
+  from(table: string): PostgrestFilterBuilder {
+    const token = currentSession?.access_token;
+    const headers = getAuthHeaders(token || undefined);
+    return new PostgrestFilterBuilder(SUPABASE_URL, table, headers, 'GET');
+  }
+
+  fromInsert(table: string, data: unknown): PostgrestFilterBuilder {
+    const token = currentSession?.access_token;
+    const headers = getAuthHeaders(token || undefined);
+    return new PostgrestFilterBuilder(SUPABASE_URL, table, headers, 'POST', data);
+  }
+
+  fromUpdate(table: string, data: unknown): PostgrestFilterBuilder {
+    const token = currentSession?.access_token;
+    const headers = getAuthHeaders(token || undefined);
+    return new PostgrestFilterBuilder(SUPABASE_URL, table, headers, 'PATCH', data);
+  }
+
+  channel(_name: string) {
+    return {
+      on: (_event: string, _opts: unknown, _callback: unknown) => {
+        return {
+          subscribe: () => {
+            console.log('[Supabase] Realtime not available in REST client, using polling instead');
+            return { unsubscribe: () => {} };
+          },
+        };
+      },
+    };
+  }
+
+  removeChannel(_channel: unknown) {
+    console.log('[Supabase] removeChannel (no-op in REST client)');
+  }
+}
+
+export const supabase = new SupabaseRestClient();

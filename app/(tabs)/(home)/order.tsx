@@ -186,8 +186,9 @@ export default function OrderScreen() {
         console.log('[Order] No gas price found for brand:', selectedBrandId);
         throw new Error('No price found for this brand');
       }
-      console.log('[Order] Fetched gas price:', data[0].price_per_kg);
-      return data[0] as SupabaseGasPrice;
+      const row = data[0] as SupabaseGasPrice;
+      console.log('[Order] Fetched gas price:', row.price_per_kg);
+      return row;
     },
     enabled: !!selectedBrandId,
   });

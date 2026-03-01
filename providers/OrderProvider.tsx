@@ -102,7 +102,7 @@ function mapSupabaseOrderToOrder(o: SupabaseOrderRow): Order {
 
 export const [OrderProvider, useOrders] = createContextHook(() => {
   const queryClient = useQueryClient();
-  const { customerId } = useAuth();
+  const { customerId, session } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const notifications: never[] = [];
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
@@ -138,34 +138,11 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     refetchInterval: 10000,
   });
 
-
-
   useEffect(() => {
     if (ordersQuery.data) {
       setOrders(ordersQuery.data);
     }
   }, [ordersQuery.data]);
-
-  useEffect(() => {
-    if (!customerId) return;
-    console.log('[Orders] Setting up realtime subscription for customer:', customerId);
-    const channel = supabase
-      .channel('orders-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders', filter: `customer_id=eq.${customerId}` },
-        (payload) => {
-          console.log('[Orders] Realtime order change:', payload.eventType);
-          queryClient.invalidateQueries({ queryKey: ['orders'] });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      console.log('[Orders] Cleaning up realtime subscription');
-      supabase.removeChannel(channel);
-    };
-  }, [customerId, queryClient]);
 
   const placeOrder = useCallback(async (orderParams: {
     brandId: string;
@@ -183,8 +160,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
   }): Promise<Order> => {
     console.log('[Orders] Placing order via Edge Function for customer:', customerId);
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData?.session?.access_token;
+    const accessToken = session?.access_token;
     if (!accessToken) {
       throw new Error('Not authenticated. Please log in again.');
     }
@@ -244,7 +220,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     queryClient.invalidateQueries({ queryKey: ['orders'] });
 
     return newOrder;
-  }, [customerId, queryClient]);
+  }, [customerId, session, queryClient]);
 
   const updateOrderStatus = useCallback((orderId: string, status: Order['status']) => {
     console.log('[Orders] Updating order status:', orderId, '->', status);
@@ -258,12 +234,8 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
 
     if (customerId) {
       supabase
-        .from('orders')
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq('id', orderId)
-        .then(({ error }) => {
-          if (error) console.log('[Orders] Status update error:', error.message);
-        });
+        .fromUpdate('orders', { status, updated_at: new Date().toISOString() })
+        .eq('id', orderId);
     }
   }, [customerId]);
 
@@ -277,8 +249,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
 
     if (customerId) {
       const { error } = await supabase
-        .from('orders')
-        .update({
+        .fromUpdate('orders', {
           rating,
           rating_comment: comment ?? null,
           updated_at: new Date().toISOString(),
