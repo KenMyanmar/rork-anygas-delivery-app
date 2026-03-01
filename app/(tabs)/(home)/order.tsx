@@ -341,7 +341,7 @@ export default function OrderScreen() {
         return (
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Select Gas Brand</Text>
-            <Text style={styles.stepTitleMM}>ဂက်စ်အမှတ်တံဆိပ် ရွေးပါ</Text>
+            <Text style={styles.stepTitleMM}>{'\u1002\u1000\u103A\u1005\u103A\u1021\u1019\u103E\u1010\u103A\u1010\u1036\u1006\u102D\u1015\u103A \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
             {brandsQuery.isLoading ? (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator size="large" color={Colors.primary} />
@@ -404,7 +404,7 @@ export default function OrderScreen() {
         return (
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Select Cylinder Size</Text>
-            <Text style={styles.stepTitleMM}>ဆလင်ဒါအရွယ်အစား ရွေးပါ</Text>
+            <Text style={styles.stepTitleMM}>{'\u1006\u101C\u1004\u103A\u1012\u102B\u1021\u101B\u103D\u101A\u103A\u1021\u1005\u102C\u1038 \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
             {cylindersLoading ? (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator size="large" color={Colors.primary} />
@@ -474,7 +474,7 @@ export default function OrderScreen() {
         return (
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Order Type</Text>
-            <Text style={styles.stepTitleMM}>အော်ဒါအမျိုးအစား ရွေးပါ</Text>
+            <Text style={styles.stepTitleMM}>{'\u1021\u1031\u102C\u103A\u1012\u102B\u1021\u1019\u103B\u102D\u102F\u1038\u1021\u1005\u102C\u1038 \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
             <View style={styles.typeList}>
               {ORDER_TYPES.map((type) => (
                 <TouchableOpacity
@@ -530,7 +530,7 @@ export default function OrderScreen() {
               </TouchableOpacity>
             )}
             <Text style={styles.stepTitle}>Price Breakdown</Text>
-            <Text style={styles.stepTitleMM}>ဈေးနှုန်းအသေးစိတ်</Text>
+            <Text style={styles.stepTitleMM}>{'\u1008\u1031\u1038\u1014\u103E\u102F\u1014\u103A\u1038\u1021\u101E\u1031\u1038\u1005\u102D\u1010\u103A'}</Text>
             <View style={styles.pricingCard}>
               <View style={styles.pricingRow}>
                 <Text style={styles.pricingLabel}>
@@ -563,7 +563,7 @@ export default function OrderScreen() {
         return (
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Delivery Address</Text>
-            <Text style={styles.stepTitleMM}>ပို့ဆောင်မည့်လိပ်စာ ရွေးပါ</Text>
+            <Text style={styles.stepTitleMM}>{'\u1015\u102D\u102F\u1037\u1006\u1031\u102C\u1004\u103A\u1019\u100A\u103A\u1037\u101C\u102D\u1015\u103A\u1005\u102C \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
             <View style={styles.addressList}>
               {savedAddresses.map((addr) => (
                 <TouchableOpacity
@@ -617,7 +617,7 @@ export default function OrderScreen() {
               </TouchableOpacity>
             )}
             <Text style={styles.stepTitle}>Payment Method</Text>
-            <Text style={styles.stepTitleMM}>ငွေပေးချေမှု ရွေးပါ</Text>
+            <Text style={styles.stepTitleMM}>{'\u1004\u103D\u1031\u1015\u1031\u1038\u1001\u103B\u1031\u1019\u103E\u102F \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
             <View style={styles.paymentList}>
               {PAYMENT_OPTIONS.map((opt) => (
                 <TouchableOpacity
@@ -660,7 +660,7 @@ export default function OrderScreen() {
               </View>
             )}
             <Text style={styles.stepTitle}>Confirm Order</Text>
-            <Text style={styles.stepTitleMM}>အော်ဒါ အတည်ပြုပါ</Text>
+            <Text style={styles.stepTitleMM}>{'\u1021\u1031\u102C\u103A\u1012\u102B \u1021\u1010\u100A\u103A\u1015\u103C\u102F\u1015\u102B'}</Text>
             <View style={styles.confirmCard}>
               <View style={styles.confirmRow}>
                 <Text style={styles.confirmLabel}>Brand</Text>

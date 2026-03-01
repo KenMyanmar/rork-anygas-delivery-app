@@ -29,10 +29,10 @@ import { useOrders } from '@/providers/OrderProvider';
 import { OrderStatus } from '@/types';
 
 const STATUS_STEPS: { key: OrderStatus; label: string; labelMM: string }[] = [
-  { key: 'new', label: 'Order Placed', labelMM: 'မှာယူပြီး' },
-  { key: 'in_progress', label: 'Received by Delivery Agent', labelMM: 'ကိုယ်စားလှယ်လက်ခံပြီး' },
-  { key: 'dispatched', label: 'On the Way', labelMM: 'ပို့ဆောင်နေဆဲ' },
-  { key: 'delivered', label: 'Delivered', labelMM: 'ပို့ဆောင်ပြီး' },
+  { key: 'new', label: 'Order Placed', labelMM: '\u1019\u103E\u102C\u101A\u1030\u1015\u103C\u102E\u1038' },
+  { key: 'in_progress', label: 'Received by Delivery Agent', labelMM: '\u1000\u102D\u102F\u101A\u103A\u1005\u102C\u1038\u101C\u103E\u101A\u103A\u101C\u1000\u103A\u1001\u1036\u1015\u103C\u102E\u1038' },
+  { key: 'dispatched', label: 'On the Way', labelMM: '\u1015\u102D\u102F\u1037\u1006\u1031\u102C\u1004\u103A\u1014\u1031\u1006\u1032' },
+  { key: 'delivered', label: 'Delivered', labelMM: '\u1015\u102D\u102F\u1037\u1006\u1031\u102C\u1004\u103A\u1015\u103C\u102E\u1038' },
 ];
 
 export default function TrackingScreen() {
@@ -134,7 +134,7 @@ export default function TrackingScreen() {
                 <XCircle size={40} color={Colors.error} />
               </View>
               <Text style={styles.terminalTitle}>Order Cancelled</Text>
-              <Text style={styles.terminalTitleMM}>မှာယူမှု ပယ်ဖျက်ပြီး</Text>
+              <Text style={styles.terminalTitleMM}>{'\u1019\u103E\u102C\u101A\u1030\u1019\u103E\u102F \u1015\u101A\u103A\u1016\u103B\u1000\u103A\u1015\u103C\u102E\u1038'}</Text>
               {(activeOrder as any).cancelled_reason ? (
                 <Text style={styles.terminalReason}>{(activeOrder as any).cancelled_reason}</Text>
               ) : null}
@@ -153,7 +153,7 @@ export default function TrackingScreen() {
                 <AlertTriangle size={40} color={Colors.warning} />
               </View>
               <Text style={styles.terminalTitle}>Delivery Unsuccessful</Text>
-              <Text style={styles.terminalTitleMM}>ပို့ဆောင်မှု မအောင်မြင်ပါ</Text>
+              <Text style={styles.terminalTitleMM}>{'\u1015\u102D\u102F\u1037\u1006\u1031\u102C\u1004\u103A\u1019\u103E\u102F \u1019\u1021\u1031\u102C\u1004\u103A\u1019\u103C\u1004\u103A\u1015\u102B'}</Text>
               <View style={styles.terminalActions}>
                 <TouchableOpacity
                   style={[styles.terminalButton, styles.terminalButtonOutline]}

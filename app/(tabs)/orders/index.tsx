@@ -21,13 +21,14 @@ const FILTER_OPTIONS: { key: FilterKey; label: string; labelMM: string }[] = [
   { key: 'cancelled', label: 'Cancelled', labelMM: 'ပယ်ဖျက်ပြီး' },
 ];
 
-const ACTIVE_STATUSES: OrderStatus[] = ['new', 'confirmed', 'dispatched'];
+const ACTIVE_STATUSES: OrderStatus[] = ['new', 'confirmed', 'in_progress', 'dispatched'];
 const CANCELLED_STATUSES: OrderStatus[] = ['cancelled', 'failed'];
 
 function getCustomerStatusLabel(status: OrderStatus): string {
   switch (status) {
     case 'new': return 'Placed';
     case 'confirmed':
+    case 'in_progress': return 'Received by Agent';
     case 'dispatched': return 'On the Way';
     case 'delivered': return 'Delivered';
     case 'cancelled':
@@ -38,12 +39,13 @@ function getCustomerStatusLabel(status: OrderStatus): string {
 
 function getCustomerStatusLabelMM(status: OrderStatus): string {
   switch (status) {
-    case 'new': return 'မှာယူပြီး';
+    case 'new': return '\u1019\u103E\u102C\u101A\u1030\u1015\u103C\u102E\u1038';
     case 'confirmed':
-    case 'dispatched': return 'ပို့ဆောင်နေဆဲ';
-    case 'delivered': return 'ပို့ဆောင်ပြီး';
+    case 'in_progress': return '\u1000\u102D\u102F\u101A\u103A\u1005\u102C\u1038\u101C\u103E\u101A\u103A\u101C\u1000\u103A\u1001\u1036\u1015\u103C\u102E\u1038';
+    case 'dispatched': return '\u1015\u102D\u102F\u1037\u1006\u1031\u102C\u1004\u103A\u1014\u1031\u1006\u1032';
+    case 'delivered': return '\u1015\u102D\u102F\u1037\u1006\u1031\u102C\u1004\u103A\u1015\u103C\u102E\u1038';
     case 'cancelled':
-    case 'failed': return 'ပယ်ဖျက်ပြီး';
+    case 'failed': return '\u1019\u103E\u102C\u101A\u1030\u1019\u103E\u102F \u1015\u101A\u103A\u1016\u103B\u1000\u103A\u1015\u103C\u102E\u1038';
     default: return status;
   }
 }
@@ -52,6 +54,7 @@ function getStatusColor(status: OrderStatus) {
   switch (status) {
     case 'new': return Colors.warning;
     case 'confirmed':
+    case 'in_progress':
     case 'dispatched': return Colors.primary;
     case 'delivered': return Colors.success;
     case 'cancelled':

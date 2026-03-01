@@ -83,7 +83,7 @@ export interface PricingBreakdown {
   total: number;
 }
 
-export type OrderStatus = 'new' | 'confirmed' | 'dispatched' | 'delivered' | 'cancelled' | 'failed';
+export type OrderStatus = 'new' | 'confirmed' | 'in_progress' | 'dispatched' | 'delivered' | 'cancelled' | 'failed';
 
 export interface DeliveryAgent {
   id: string;

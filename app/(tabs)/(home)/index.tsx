@@ -45,6 +45,7 @@ function getCustomerStatusLabel(status: OrderStatus): string {
   switch (status) {
     case 'new': return 'Placed';
     case 'confirmed':
+    case 'in_progress': return 'Received by Agent';
     case 'dispatched': return 'On the Way';
     case 'delivered': return 'Delivered';
     case 'cancelled':
@@ -57,6 +58,7 @@ function getStatusColor(status: OrderStatus) {
   switch (status) {
     case 'new': return Colors.warning;
     case 'confirmed':
+    case 'in_progress':
     case 'dispatched': return Colors.primary;
     case 'delivered': return Colors.success;
     case 'cancelled':
@@ -212,7 +214,7 @@ export default function HomeScreen() {
                   <Flame size={36} color="#FFFFFF" strokeWidth={2} />
                 </View>
                 <Text style={styles.heroTitle}>ORDER GAS NOW</Text>
-                <Text style={styles.heroTitleMM}>ဂက်စ်မှာမယ်</Text>
+                <Text style={styles.heroTitleMM}>{'\u1002\u1000\u103A\u1005\u103A\u1019\u103E\u102C\u1019\u101A\u103A'}</Text>
                 <Text style={styles.heroSubtitle}>Fast delivery to your door</Text>
               </TouchableOpacity>
             </Animated.View>
@@ -220,7 +222,7 @@ export default function HomeScreen() {
             {lastOrder && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Quick Reorder</Text>
-                <Text style={styles.sectionTitleMM}>ပြန်မှာမယ်</Text>
+                <Text style={styles.sectionTitleMM}>{'\u1015\u103C\u1014\u103A\u1019\u103E\u102C\u1019\u101A\u103A'}</Text>
                 <TouchableOpacity
                   style={styles.reorderCard}
                   onPress={handleReorder}
