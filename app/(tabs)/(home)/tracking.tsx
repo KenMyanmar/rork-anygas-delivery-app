@@ -20,6 +20,9 @@ import {
   User,
   Star,
   Package,
+  XCircle,
+  AlertTriangle,
+  Home,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useOrders } from '@/providers/OrderProvider';
@@ -27,8 +30,8 @@ import { OrderStatus } from '@/types';
 
 const STATUS_STEPS: { key: OrderStatus; label: string; labelMM: string }[] = [
   { key: 'new', label: 'Order Placed', labelMM: 'မှာယူပြီး' },
-  { key: 'confirmed', label: 'On the Way', labelMM: 'ပို့ဆောင်နေဆဲ' },
-  { key: 'dispatched', label: 'Dispatched', labelMM: 'ပို့ဆောင်နေဆဲ' },
+  { key: 'confirmed', label: 'Received by Delivery Agent', labelMM: 'ကိုယ်စားလှယ်လက်ခံပြီး' },
+  { key: 'dispatched', label: 'On the Way', labelMM: 'ပို့ဆောင်နေဆဲ' },
   { key: 'delivered', label: 'Delivered', labelMM: 'ပို့ဆောင်ပြီး' },
 ];
 
@@ -78,7 +81,14 @@ export default function TrackingScreen() {
     );
   }
 
-  const currentStepIndex = STATUS_STEPS.findIndex(s => s.key === activeOrder.status);
+  const isCancelled = activeOrder.status === 'cancelled';
+  const isFailed = activeOrder.status === 'failed';
+  const isTerminal = isCancelled || isFailed;
+  const currentStepIndex = isTerminal ? -1 : STATUS_STEPS.findIndex(s => s.key === activeOrder.status);
+
+  const orderLabel = [activeOrder.brandName, activeOrder.cylinderSize ? `${activeOrder.cylinderSize} kg` : null].filter(Boolean).join(' · ') || 'Gas';
+
+  const orderTypeLabel = activeOrder.orderType === 'refill' ? 'Refill' : activeOrder.orderType === 'new_setup' ? 'New Setup' : 'Exchange';
 
   return (
     <View style={styles.container}>
@@ -96,14 +106,12 @@ export default function TrackingScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.orderSummary}>
-            <View style={[styles.brandBadge, { backgroundColor: Colors.primary + '15' }]}>
-              <Package size={24} color={Colors.primary} />
+            <View style={[styles.brandBadge, { backgroundColor: isTerminal ? Colors.errorLight : Colors.primary + '15' }]}>
+              <Package size={24} color={isTerminal ? Colors.error : Colors.primary} />
             </View>
             <View style={styles.orderSummaryText}>
-              <Text style={styles.orderBrand}>{activeOrder.brandName || 'Gas'} {activeOrder.cylinderSize}kg</Text>
-              <Text style={styles.orderType}>
-                {activeOrder.orderType === 'refill' ? 'Refill' : activeOrder.orderType === 'new_setup' ? 'New Setup' : 'Exchange'}
-              </Text>
+              <Text style={styles.orderBrand}>{orderLabel}</Text>
+              <Text style={styles.orderType}>{orderTypeLabel}</Text>
             </View>
             <Text style={styles.orderTotal}>{activeOrder.pricing.total.toLocaleString()} K</Text>
           </View>
@@ -120,36 +128,83 @@ export default function TrackingScreen() {
             </View>
           )}
 
-          <View style={styles.statusCard}>
-            <Text style={styles.sectionTitle}>Order Status</Text>
-            {STATUS_STEPS.map((step, index) => {
-              const isCompleted = index <= currentStepIndex;
-              const isCurrent = index === currentStepIndex;
-              const isLast = index === STATUS_STEPS.length - 1;
-              return (
-                <View key={step.key} style={styles.statusRow}>
-                  <View style={styles.statusIndicator}>
-                    {isCompleted ? (
-                      <View style={[styles.statusCircleCompleted, isCurrent && styles.statusCircleCurrent]}>
-                        <CheckCircle size={20} color={isCurrent ? Colors.primary : Colors.success} />
-                      </View>
-                    ) : (
-                      <Circle size={20} color={Colors.border} />
-                    )}
-                    {!isLast && (
-                      <View style={[styles.statusLine, isCompleted && styles.statusLineCompleted]} />
-                    )}
+          {isCancelled ? (
+            <View style={styles.terminalCard}>
+              <View style={styles.terminalIconWrap}>
+                <XCircle size={40} color={Colors.error} />
+              </View>
+              <Text style={styles.terminalTitle}>Order Cancelled</Text>
+              <Text style={styles.terminalTitleMM}>မှာယူမှု ပယ်ဖျက်ပြီး</Text>
+              {(activeOrder as any).cancelled_reason ? (
+                <Text style={styles.terminalReason}>{(activeOrder as any).cancelled_reason}</Text>
+              ) : null}
+              <TouchableOpacity
+                style={styles.terminalButton}
+                onPress={() => router.replace('/(tabs)/(home)')}
+                activeOpacity={0.85}
+              >
+                <Home size={18} color="#FFFFFF" />
+                <Text style={styles.terminalButtonText}>Back to Home</Text>
+              </TouchableOpacity>
+            </View>
+          ) : isFailed ? (
+            <View style={styles.terminalCard}>
+              <View style={[styles.terminalIconWrap, { backgroundColor: Colors.warningLight }]}>
+                <AlertTriangle size={40} color={Colors.warning} />
+              </View>
+              <Text style={styles.terminalTitle}>Delivery Unsuccessful</Text>
+              <Text style={styles.terminalTitleMM}>ပို့ဆောင်မှု မအောင်မြင်ပါ</Text>
+              <View style={styles.terminalActions}>
+                <TouchableOpacity
+                  style={[styles.terminalButton, styles.terminalButtonOutline]}
+                  onPress={() => Linking.openURL('tel:8484')}
+                  activeOpacity={0.85}
+                >
+                  <Phone size={18} color={Colors.primary} />
+                  <Text style={[styles.terminalButtonText, { color: Colors.primary }]}>Contact 8484</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.terminalButton}
+                  onPress={() => router.replace('/(tabs)/(home)')}
+                  activeOpacity={0.85}
+                >
+                  <Home size={18} color="#FFFFFF" />
+                  <Text style={styles.terminalButtonText}>Back to Home</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.statusCard}>
+              <Text style={styles.sectionTitle}>Order Status</Text>
+              {STATUS_STEPS.map((step, index) => {
+                const isCompleted = index <= currentStepIndex;
+                const isCurrent = index === currentStepIndex;
+                const isLast = index === STATUS_STEPS.length - 1;
+                return (
+                  <View key={step.key} style={styles.statusRow}>
+                    <View style={styles.statusIndicator}>
+                      {isCompleted ? (
+                        <View style={[styles.statusCircleCompleted, isCurrent && styles.statusCircleCurrent]}>
+                          <CheckCircle size={20} color={isCurrent ? Colors.primary : Colors.success} />
+                        </View>
+                      ) : (
+                        <Circle size={20} color={Colors.border} />
+                      )}
+                      {!isLast && (
+                        <View style={[styles.statusLine, isCompleted && styles.statusLineCompleted]} />
+                      )}
+                    </View>
+                    <View style={styles.statusContent}>
+                      <Text style={[styles.statusLabel, isCompleted && styles.statusLabelCompleted, isCurrent && styles.statusLabelCurrent]}>
+                        {step.label}
+                      </Text>
+                      <Text style={styles.statusLabelMM}>{step.labelMM}</Text>
+                    </View>
                   </View>
-                  <View style={styles.statusContent}>
-                    <Text style={[styles.statusLabel, isCompleted && styles.statusLabelCompleted, isCurrent && styles.statusLabelCurrent]}>
-                      {step.label}
-                    </Text>
-                    <Text style={styles.statusLabelMM}>{step.labelMM}</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+                );
+              })}
+            </View>
+          )}
 
           {activeOrder.agent && (
             <View style={styles.agentCard}>
@@ -184,7 +239,7 @@ export default function TrackingScreen() {
             </View>
           </View>
 
-          {activeOrder.status === 'delivered' && !activeOrder.rating && (
+          {!isTerminal && activeOrder.status === 'delivered' && !activeOrder.rating && (
             <TouchableOpacity
               style={styles.rateButton}
               onPress={handleRate}
@@ -436,5 +491,67 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: Colors.textTertiary,
+  },
+  terminalCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    padding: 28,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    alignItems: 'center',
+  },
+  terminalIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.errorLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  terminalTitle: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  terminalTitleMM: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+  },
+  terminalReason: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center' as const,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+  },
+  terminalActions: {
+    width: '100%' as const,
+    gap: 10,
+    marginTop: 8,
+  },
+  terminalButton: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: Colors.primary,
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 8,
+    width: '100%' as const,
+    marginTop: 4,
+  },
+  terminalButtonOutline: {
+    backgroundColor: Colors.primaryLight,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+  },
+  terminalButtonText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#FFFFFF',
   },
 });
