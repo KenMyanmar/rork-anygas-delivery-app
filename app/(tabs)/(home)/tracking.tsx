@@ -9,7 +9,7 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   ChevronLeft,
   Phone,
@@ -28,16 +28,20 @@ import Colors from '@/constants/colors';
 import { useOrders } from '@/providers/OrderProvider';
 import { OrderStatus } from '@/types';
 
-const STATUS_STEPS: { key: OrderStatus; label: string }[] = [
-  { key: 'new', label: 'Order Placed' },
-  { key: 'in_progress', label: 'Received by Delivery Agent' },
-  { key: 'dispatched', label: 'On the Way' },
-  { key: 'delivered', label: 'Delivered' },
+const STATUS_STEPS: { key: OrderStatus; label: string; labelMM: string }[] = [
+  { key: 'new', label: 'Order Placed', labelMM: 'မှာယူပြီး' },
+  { key: 'in_progress', label: 'Received by Delivery Agent', labelMM: 'ကိုယ်စားလှယ်လက်ခံပြီး' },
+  { key: 'dispatched', label: 'On the Way', labelMM: 'ပို့ဆောင်နေဆဲ' },
+  { key: 'delivered', label: 'Delivered', labelMM: 'ပို့ဆောင်ပြီး' },
 ];
 
 export default function TrackingScreen() {
   const { getActiveOrder, orders } = useOrders();
-  const activeOrder = getActiveOrder() || orders[0];
+  const { orderId } = useLocalSearchParams<{ orderId?: string }>();
+
+  const activeOrder = orderId
+    ? orders.find(o => o.id === orderId) || null
+    : getActiveOrder();
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
@@ -134,6 +138,7 @@ export default function TrackingScreen() {
                 <XCircle size={40} color={Colors.error} />
               </View>
               <Text style={styles.terminalTitle}>Order Cancelled</Text>
+              <Text style={styles.terminalTitleMM}>{'မှာယူမှု ပယ်ဖျက်ပြီး'}</Text>
               {(activeOrder as any).cancelled_reason ? (
                 <Text style={styles.terminalReason}>{(activeOrder as any).cancelled_reason}</Text>
               ) : null}
@@ -152,6 +157,7 @@ export default function TrackingScreen() {
                 <AlertTriangle size={40} color={Colors.warning} />
               </View>
               <Text style={styles.terminalTitle}>Delivery Unsuccessful</Text>
+              <Text style={styles.terminalTitleMM}>{'ပို့ဆောင်မှု မအောင်မြင်ပါ'}</Text>
               <View style={styles.terminalActions}>
                 <TouchableOpacity
                   style={[styles.terminalButton, styles.terminalButtonOutline]}
@@ -196,7 +202,7 @@ export default function TrackingScreen() {
                       <Text style={[styles.statusLabel, isCompleted && styles.statusLabelCompleted, isCurrent && styles.statusLabelCurrent]}>
                         {step.label}
                       </Text>
-
+                      <Text style={styles.statusLabelMM}>{step.labelMM}</Text>
                     </View>
                   </View>
                 );
@@ -395,7 +401,11 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '700' as const,
   },
-
+  statusLabelMM: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    marginTop: 1,
+  },
   agentCard: {
     backgroundColor: Colors.surface,
     borderRadius: 18,
@@ -510,7 +520,11 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginBottom: 4,
   },
-
+  terminalTitleMM: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+  },
   terminalReason: {
     fontSize: 14,
     color: Colors.textSecondary,

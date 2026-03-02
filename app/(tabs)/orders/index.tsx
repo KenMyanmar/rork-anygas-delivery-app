@@ -86,7 +86,7 @@ export default function OrdersScreen() {
         style={styles.orderCard}
         activeOpacity={0.7}
         onPress={() => {
-          router.push('/(tabs)/(home)/tracking');
+          router.push({ pathname: '/(tabs)/(home)/tracking', params: { orderId: item.id } });
         }}
       >
         <View style={[styles.brandBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
