@@ -91,8 +91,11 @@ function getBrandColor(name: string): string {
   return Colors.primary;
 }
 
-const DELIVERY_FEE_REFILL = 3000;
-const EXCHANGE_FEE = 2000;
+// Server v45 contract: refill = 6000 for Other Partners (brand 62a6da96...), 3000 for all others;
+// new_setup / exchange / service_call = 0. Server recomputes and rejects >1% client mismatch (409).
+// Brand identified by name ('Other Partners') since the full UUID isn't in the client repo.
+const REFILL_FEE_STANDARD = 3000;
+const REFILL_FEE_OTHER_PARTNERS = 6000;
 
 function getPaymentIcon(iconName: string, color: string) {
   const size = 22;
@@ -289,17 +292,19 @@ export default function OrderScreen() {
     let deliveryFee = 0;
 
     if (selectedType === 'refill') {
-      deliveryFee = DELIVERY_FEE_REFILL;
+      deliveryFee = selectedBrand?.name === 'Other Partners'
+        ? REFILL_FEE_OTHER_PARTNERS
+        : REFILL_FEE_STANDARD;
     } else if (selectedType === 'new_setup') {
       cylinderPrice = selectedCylinder.cylinderPrice * quantity;
       deliveryFee = 0;
-    } else if (selectedType === 'exchange') {
-      deliveryFee = EXCHANGE_FEE;
+    } else if (selectedType === 'exchange' || selectedType === 'service_call') {
+      deliveryFee = 0;
     }
 
     const total = gasPrice + cylinderPrice + deliveryFee;
     return { gasPrice, cylinderPrice, deliveryFee, total };
-  }, [selectedCylinder, selectedType, quantity]);
+  }, [selectedCylinder, selectedType, quantity, selectedBrand]);
 
   const handleConfirmOrder = useCallback(async () => {
     if (!selectedBrandId || !selectedCylinder || !selectedType || !selectedAddress || !selectedPayment || !customerId) return;
@@ -546,7 +551,7 @@ export default function OrderScreen() {
               )}
               <View style={styles.pricingRow}>
                 <Text style={styles.pricingLabel}>
-                  {selectedType === 'exchange' ? 'Exchange Fee' : 'Delivery Fee'}
+                  {selectedType === 'service_call' ? 'Service Fee' : selectedType === 'exchange' ? 'Exchange Fee' : 'Delivery Fee'}
                 </Text>
                 <Text style={styles.pricingValue}>{formatPrice(pricing.deliveryFee)} MMK</Text>
               </View>

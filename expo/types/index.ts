@@ -57,7 +57,7 @@ export interface CylinderOption {
   imageUrl: string | null;
 }
 
-export type OrderType = 'refill' | 'new_setup' | 'exchange';
+export type OrderType = 'refill' | 'new_setup' | 'exchange' | 'service_call';
 
 export interface OrderTypeOption {
   id: OrderType;

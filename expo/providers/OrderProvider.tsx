@@ -168,6 +168,11 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
     const edgeFunctionUrl = `${supabaseUrl}/functions/v1/create-customer-order`;
 
+    // Server v45 contract accepts: 'refill' | 'new' | 'exchange' | 'service_call'.
+    // Send exchange/service_call verbatim — mapping them to 'refill' makes the server
+    // charge the refill delivery fee (6000/3000) instead of 0.
+    const serverOrderType = orderParams.orderType === 'new_setup' ? 'new' : orderParams.orderType;
+
     console.log('[Orders] Calling Edge Function:', edgeFunctionUrl);
     const response = await fetch(edgeFunctionUrl, {
       method: 'POST',
@@ -179,7 +184,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
         brandId: orderParams.brandId,
         cylinderType: orderParams.cylinderDisplayName,
         sizeKg: orderParams.cylinderSize,
-        orderType: orderParams.orderType === 'new_setup' ? 'new' : orderParams.orderType === 'exchange' ? 'refill' : orderParams.orderType,
+        orderType: serverOrderType,
         quantity: orderParams.quantity,
         clientTotal: orderParams.totalAmount,
         deliveryInstructions: null,
@@ -190,6 +195,16 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     console.log('[Orders] Edge Function response status:', response.status, 'result:', JSON.stringify(result));
 
     if (!response.ok) {
+      // 409 = server recomputed total differs from clientTotal by >1% (price changed mid-flow).
+      // Surface a clear retry message instead of a generic failure.
+      if (response.status === 409) {
+        const serverTotal = result?.server_total ?? result?.expected_total;
+        const msg = serverTotal != null
+          ? `Price changed (server total ${Math.round(serverTotal).toLocaleString()} MMK). Please review and try again.`
+          : 'Price changed since you opened the order. Please review and try again.';
+        console.log('[Orders] 409 price mismatch:', JSON.stringify(result));
+        throw new Error(msg);
+      }
       const errorMsg = result?.error || result?.message || 'Failed to place order';
       console.log('[Orders] Edge Function error:', errorMsg);
       throw new Error(errorMsg);

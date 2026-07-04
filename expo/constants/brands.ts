@@ -22,6 +22,13 @@ export const ORDER_TYPES: OrderTypeOption[] = [
     description: 'Swap your empty cylinder for a full one',
     descriptionMM: 'ဗလာဆလင်ဒါကို အပြည့်နဲ့ လဲလှယ်ပါ',
   },
+  {
+    id: 'service_call',
+    label: 'Service Call',
+    labelMM: 'ဝန်ဆောင်မှုခေါ်ဆို',
+    description: 'Request a technician visit (no delivery fee)',
+    descriptionMM: 'နည်းပညာရှင် ခေါ်ဆို (မပို့ဆောင်ခ မရှိ)',
+  },
 ];
 
 export const PAYMENT_OPTIONS: PaymentOption[] = [
