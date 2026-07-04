@@ -10,43 +10,39 @@ import { router } from 'expo-router';
 import { Package, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useOrders } from '@/providers/OrderProvider';
+import { useI18n } from '@/providers/I18nProvider';
 import { Order, OrderStatus } from '@/types';
 
 type FilterKey = 'all' | 'active' | 'delivered' | 'cancelled';
 
-const FILTER_OPTIONS: { key: FilterKey; label: string; labelMM: string }[] = [
-  { key: 'all', label: 'All', labelMM: 'အားလုံး' },
-  { key: 'active', label: 'Active', labelMM: 'လုပ်ဆောင်ဆဲ' },
-  { key: 'delivered', label: 'Delivered', labelMM: 'ပို့ဆောင်ပြီး' },
-  { key: 'cancelled', label: 'Cancelled', labelMM: 'ပယ်ဖျက်ပြီး' },
-];
-
 const ACTIVE_STATUSES: OrderStatus[] = ['new', 'confirmed', 'in_progress', 'dispatched'];
 const CANCELLED_STATUSES: OrderStatus[] = ['cancelled', 'failed'];
 
-function getCustomerStatusLabel(status: OrderStatus): string {
+// 4-stage contract status labels. 'dispatched' is a dead stage in prod (zero rows)
+// but retained for backward-compat — mapped to 'On the Way' = in_progress equivalent.
+function getCustomerStatusLabel(status: OrderStatus, t: (k: any) => string): string {
   switch (status) {
-    case 'new': return 'Placed';
+    case 'new': return t('status_placed');
     case 'confirmed':
-    case 'in_progress': return 'Received by Agent';
-    case 'dispatched': return 'On the Way';
-    case 'delivered': return 'Delivered';
-    case 'cancelled':
-    case 'failed': return 'Cancelled';
-    default: return status;
+    case 'in_progress':
+    case 'dispatched': return t('status_on_the_way');
+    case 'delivered': return t('status_delivered');
+    case 'cancelled': return t('status_cancelled');
+    case 'failed': return t('status_failed');
+    default: return String(status);
   }
 }
 
-function getCustomerStatusLabelMM(status: OrderStatus): string {
+function getCustomerStatusLabelMM(status: OrderStatus, tMM: (k: any) => string): string {
   switch (status) {
-    case 'new': return '\u1019\u103E\u102C\u101A\u1030\u1015\u103C\u102E\u1038';
+    case 'new': return tMM('status_placed');
     case 'confirmed':
-    case 'in_progress': return '\u1000\u102D\u102F\u101A\u103A\u1005\u102C\u1038\u101C\u103E\u101A\u103A\u101C\u1000\u103A\u1001\u1036\u1015\u103C\u102E\u1038';
-    case 'dispatched': return '\u1015\u102D\u102F\u1037\u1006\u1031\u102C\u1004\u103A\u1014\u1031\u1006\u1032';
-    case 'delivered': return '\u1015\u102D\u102F\u1037\u1006\u1031\u102C\u1004\u103A\u1015\u103C\u102E\u1038';
-    case 'cancelled':
-    case 'failed': return '\u1019\u103E\u102C\u101A\u1030\u1019\u103E\u102F \u1015\u101A\u103A\u1016\u103B\u1000\u103A\u1015\u103C\u102E\u1038';
-    default: return status;
+    case 'in_progress':
+    case 'dispatched': return tMM('status_on_the_way');
+    case 'delivered': return tMM('status_delivered');
+    case 'cancelled': return tMM('status_cancelled');
+    case 'failed': return tMM('status_failed');
+    default: return String(status);
   }
 }
 
@@ -70,7 +66,15 @@ function formatDate(dateStr: string) {
 
 export default function OrdersScreen() {
   const { orders } = useOrders();
+  const { t, tMM } = useI18n();
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
+
+  const FILTER_OPTIONS: { key: FilterKey; label: string }[] = [
+    { key: 'all', label: t('filter_all') },
+    { key: 'active', label: t('filter_active') },
+    { key: 'delivered', label: t('filter_delivered') },
+    { key: 'cancelled', label: t('filter_cancelled') },
+  ];
 
   const filteredOrders = useMemo(() => {
     if (activeFilter === 'all') return orders;
@@ -98,10 +102,10 @@ export default function OrdersScreen() {
           <View style={styles.statusRow}>
             <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
             <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-              {getCustomerStatusLabel(item.status)}
+              {getCustomerStatusLabel(item.status, t)}
             </Text>
             <Text style={styles.statusTextMM}>
-              {getCustomerStatusLabelMM(item.status)}
+              {getCustomerStatusLabelMM(item.status, tMM)}
             </Text>
           </View>
         </View>
@@ -145,8 +149,8 @@ export default function OrdersScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Package size={48} color={Colors.textTertiary} />
-            <Text style={styles.emptyText}>No orders found</Text>
-            <Text style={styles.emptySubtext}>Your order history will appear here</Text>
+            <Text style={styles.emptyText}>{t('no_orders')}</Text>
+            <Text style={styles.emptySubtext}>{t('no_orders_sub')}</Text>
           </View>
         }
       />

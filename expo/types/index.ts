@@ -106,6 +106,10 @@ export interface Order {
   paymentMethod: PaymentMethod;
   status: OrderStatus;
   agent?: DeliveryAgent;
+  /** True when a supplier/delivery agent has been assigned (supplier_id IS NOT NULL).
+   *  Distinct from status — an order can be status='new' yet already assigned, or
+   *  status='in_progress' (on the way). The 4-stage tracker reads this for Step 2. */
+  supplierAssigned?: boolean;
   rating?: number;
   ratingComment?: string;
   createdAt: string;

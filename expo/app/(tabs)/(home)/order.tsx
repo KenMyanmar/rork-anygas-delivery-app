@@ -35,7 +35,6 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useOrders } from '@/providers/OrderProvider';
 import { Alert } from 'react-native';
 import { ORDER_TYPES, PAYMENT_OPTIONS } from '@/constants/brands';
-import { supabase } from '@/lib/supabase';
 import {
   OrderType,
   PaymentMethod,
@@ -43,24 +42,17 @@ import {
   SavedAddress,
   CylinderOption,
 } from '@/types';
+import { fetchCatalog, displayBrandName, CatalogEntry } from '@/lib/catalog';
+import { useI18n } from '@/providers/I18nProvider';
 
-interface SupabaseBrand {
+// Derived from catalog-list response — single source of truth.
+interface CatalogBrand {
   id: string;
   name: string;
   logo_url: string | null;
   sort_order: number;
-}
-
-interface SupabaseCylinderType {
-  id: string;
-  display_name: string;
-  size_kg: number;
-  cylinder_price: number;
-  image_url: string | null;
-}
-
-interface SupabaseGasPrice {
-  price_per_kg: number;
+  refill_delivery_fee: number;
+  allow_new_setup: boolean;
 }
 
 type Step = 'brand' | 'size' | 'type' | 'pricing' | 'address' | 'payment' | 'confirm';
@@ -94,6 +86,8 @@ function getBrandColor(name: string): string {
 // Server v45 contract: refill = 6000 for Other Partners (brand 62a6da96...), 3000 for all others;
 // new_setup / exchange / service_call = 0. Server recomputes and rejects >1% client mismatch (409).
 // Brand identified by name ('Other Partners') since the full UUID isn't in the client repo.
+// Fallback only — the catalog-list edge function supplies refill_delivery_fee per brand,
+// so the live DB value is authoritative. These are safety nets if a brand row is missing the column.
 const REFILL_FEE_STANDARD = 3000;
 const REFILL_FEE_OTHER_PARTNERS = 6000;
 
@@ -120,6 +114,7 @@ export default function OrderScreen() {
   }>();
   const { savedAddresses, getDefaultAddress, customerId, activeCustomer } = useAuth();
   const { placeOrder } = useOrders();
+  const { t, tMM, language, isMM } = useI18n();
 
   const [currentStep, setCurrentStep] = useState<Step>('brand');
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(
@@ -150,88 +145,50 @@ export default function OrderScreen() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  const brandsQuery = useQuery({
-    queryKey: ['brands'],
+  // Single fetch via the catalog-list edge function — same source the Mini App uses.
+  // Returns brands (with refill_delivery_fee + allow_new_setup) and their products in one call.
+  const catalogQuery = useQuery({
+    queryKey: ['catalog'],
     queryFn: async () => {
-      console.log('[Order] Fetching brands from Supabase');
-      const { data, error } = await supabase
-        .from('brands')
-        .select('id, name, logo_url, sort_order')
-        .eq('is_active', true)
-        .order('sort_order');
-
-      if (error) {
-        console.log('[Order] Brands fetch error:', error.message);
-        throw error;
-      }
-      console.log('[Order] Fetched brands:', data?.length);
-      return (data || []) as SupabaseBrand[];
+      console.log('[Order] Fetching catalog via catalog-list');
+      return await fetchCatalog();
     },
   });
 
-  const gasPriceQuery = useQuery({
-    queryKey: ['gas_price', selectedBrandId],
-    queryFn: async () => {
-      if (!selectedBrandId) return null;
-      console.log('[Order] Fetching gas price for brand:', selectedBrandId);
-      const { data, error } = await supabase
-        .from('gas_prices')
-        .select('price_per_kg')
-        .eq('brand_id', selectedBrandId)
-        .is('effective_to', null)
-        .limit(1);
-
-      if (error) {
-        console.log('[Order] Gas price fetch error:', JSON.stringify(error));
-        throw error;
-      }
-      if (!data || data.length === 0) {
-        console.log('[Order] No gas price found for brand:', selectedBrandId);
-        throw new Error('No price found for this brand');
-      }
-      const row = data[0] as SupabaseGasPrice;
-      console.log('[Order] Fetched gas price:', row.price_per_kg);
-      return row;
-    },
-    enabled: !!selectedBrandId,
-  });
-
-  const cylinderTypesQuery = useQuery({
-    queryKey: ['cylinder_types'],
-    queryFn: async () => {
-      console.log('[Order] Fetching cylinder types');
-      const { data, error } = await supabase
-        .from('cylinder_types')
-        .select('id, display_name, size_kg, cylinder_price, image_url')
-        .eq('is_active', true)
-        .lte('size_kg', 20)
-        .order('size_kg');
-
-      if (error) {
-        console.log('[Order] Cylinder types fetch error:', JSON.stringify(error));
-        throw error;
-      }
-      console.log('[Order] Fetched cylinder types:', data?.length, JSON.stringify(data));
-      return (data || []) as SupabaseCylinderType[];
-    },
-  });
-
-  const cylindersLoading = gasPriceQuery.isLoading || cylinderTypesQuery.isLoading;
-  const cylindersError = gasPriceQuery.isError || cylinderTypesQuery.isError;
-
-  const cylinderOptions: CylinderOption[] = useMemo(() => {
-    if (!cylinderTypesQuery.data || !gasPriceQuery.data) return [];
-    const pricePerKg = gasPriceQuery.data.price_per_kg;
-    return cylinderTypesQuery.data.map(c => ({
-      id: c.id,
-      size: c.size_kg,
-      displayName: c.display_name,
-      cylinderPrice: c.cylinder_price,
-      pricePerKg,
-      gasPrice: Math.round(pricePerKg * c.size_kg),
-      imageUrl: c.image_url,
+  const brands: CatalogBrand[] = useMemo(() => {
+    if (!catalogQuery.data) return [];
+    return catalogQuery.data.map(entry => ({
+      id: entry.brand.id,
+      name: entry.brand.name,
+      logo_url: entry.brand.logo_url,
+      sort_order: entry.brand.sort_order,
+      refill_delivery_fee: entry.brand.refill_delivery_fee,
+      allow_new_setup: entry.brand.allow_new_setup,
     }));
-  }, [cylinderTypesQuery.data, gasPriceQuery.data]);
+  }, [catalogQuery.data]);
+
+  const selectedCatalogEntry: CatalogEntry | null = useMemo(() => {
+    if (!catalogQuery.data || !selectedBrandId) return null;
+    return catalogQuery.data.find(e => e.brand.id === selectedBrandId) || null;
+  }, [catalogQuery.data, selectedBrandId]);
+
+  const cylindersLoading = catalogQuery.isLoading;
+  const cylindersError = catalogQuery.isError;
+
+  // Build cylinder options from the selected brand's products in the catalog response.
+  const cylinderOptions: CylinderOption[] = useMemo(() => {
+    if (!selectedCatalogEntry) return [];
+    const pricePerKg = selectedCatalogEntry.price_per_kg ?? selectedCatalogEntry.brand?.refill_delivery_fee ?? 0;
+    return selectedCatalogEntry.products.map(p => ({
+      id: p.cylinder_type_id,
+      size: p.size_kg,
+      displayName: p.display_name,
+      cylinderPrice: p.cylinder_price,
+      pricePerKg: p.price_per_kg,
+      gasPrice: Math.round(p.price_per_kg * p.size_kg),
+      imageUrl: p.image_url,
+    }));
+  }, [selectedCatalogEntry]);
 
   useEffect(() => {
     if (params.reorderBrand && params.reorderSize && params.reorderType) {
@@ -240,12 +197,12 @@ export default function OrderScreen() {
   }, []);
 
   const selectedBrand = useMemo(() => {
-    const brand = brandsQuery.data?.find(b => b.id === selectedBrandId) || null;
-    if (brand && brand.name === 'Other Partners') {
-      return { ...brand, name: 'Any Brands' };
+    const brand = brands.find(b => b.id === selectedBrandId) || null;
+    if (brand) {
+      return { ...brand, name: displayBrandName(brand.name) };
     }
     return brand;
-  }, [brandsQuery.data, selectedBrandId]);
+  }, [brands, selectedBrandId]);
 
   const steps = (customerHasAddress && !showAddressStep) ? STEPS_WITHOUT_ADDRESS : STEPS_WITH_ADDRESS;
   const currentStepIndex = steps.indexOf(currentStep);
@@ -292,9 +249,16 @@ export default function OrderScreen() {
     let deliveryFee = 0;
 
     if (selectedType === 'refill') {
-      deliveryFee = selectedBrand?.name === 'Other Partners'
-        ? REFILL_FEE_OTHER_PARTNERS
-        : REFILL_FEE_STANDARD;
+      // Authoritative: refill_delivery_fee from the catalog-list response (DB-sourced).
+      // Fallback to the v45 contract constants only if the column is missing.
+      const dbFee = selectedCatalogEntry?.brand?.refill_delivery_fee;
+      if (dbFee != null) {
+        deliveryFee = dbFee;
+      } else {
+        deliveryFee = selectedBrand?.name === 'Other Partners'
+          ? REFILL_FEE_OTHER_PARTNERS
+          : REFILL_FEE_STANDARD;
+      }
     } else if (selectedType === 'new_setup') {
       cylinderPrice = selectedCylinder.cylinderPrice * quantity;
       deliveryFee = 0;
@@ -304,7 +268,7 @@ export default function OrderScreen() {
 
     const total = gasPrice + cylinderPrice + deliveryFee;
     return { gasPrice, cylinderPrice, deliveryFee, total };
-  }, [selectedCylinder, selectedType, quantity, selectedBrand]);
+  }, [selectedCylinder, selectedType, quantity, selectedBrand, selectedCatalogEntry]);
 
   const handleConfirmOrder = useCallback(async () => {
     if (!selectedBrandId || !selectedCylinder || !selectedType || !selectedAddress || !selectedPayment || !customerId) return;
@@ -330,13 +294,13 @@ export default function OrderScreen() {
       }
       router.replace('/(tabs)/(home)/tracking');
     } catch (e: unknown) {
-      const errorMessage = e instanceof Error ? e.message : 'Failed to place order. Please try again.';
+      const errorMessage = e instanceof Error ? e.message : t('order_failed');
       console.log('[Order] Error placing order:', errorMessage);
-      Alert.alert('Order Failed', errorMessage);
+      Alert.alert(t('order_failed'), errorMessage);
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedBrandId, selectedBrand, selectedCylinder, selectedType, selectedAddress, selectedPayment, customerId, quantity, calculatePricing, placeOrder]);
+  }, [selectedBrandId, selectedBrand, selectedCylinder, selectedType, selectedAddress, selectedPayment, customerId, quantity, calculatePricing, placeOrder, t]);
 
   const pricing = calculatePricing();
 
@@ -345,28 +309,28 @@ export default function OrderScreen() {
       case 'brand':
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Select Gas Brand</Text>
-            <Text style={styles.stepTitleMM}>{'\u1002\u1000\u103A\u1005\u103A\u1021\u1019\u103E\u1010\u103A\u1010\u1036\u1006\u102D\u1015\u103A \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
-            {brandsQuery.isLoading ? (
+            <Text style={styles.stepTitle}>{isMM ? t('select_brand') : t('select_brand')}</Text>
+            <Text style={styles.stepTitleMM}>{tMM('select_brand')}</Text>
+            {catalogQuery.isLoading ? (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator size="large" color={Colors.primary} />
-                <Text style={styles.loadingText}>Loading brands...</Text>
+                <Text style={styles.loadingText}>{t('loading_brands')}</Text>
               </View>
-            ) : brandsQuery.isError ? (
+            ) : catalogQuery.isError ? (
               <View style={styles.errorWrap}>
-                <Text style={styles.errorText}>Failed to load brands</Text>
+                <Text style={styles.errorText}>{t('failed_brands')}</Text>
                 <TouchableOpacity
                   style={styles.retryBtn}
-                  onPress={() => brandsQuery.refetch()}
+                  onPress={() => catalogQuery.refetch()}
                 >
-                  <Text style={styles.retryText}>Retry</Text>
+                  <Text style={styles.retryText}>{t('retry')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.optionsGrid}>
-                {(brandsQuery.data || []).map((brand) => {
+                {brands.map((brand) => {
                   const color = getBrandColor(brand.name);
-                  const displayName = brand.name === 'Other Partners' ? 'Any Brands' : brand.name;
+                  const displayName = displayBrandName(brand.name);
                   return (
                     <TouchableOpacity
                       key={brand.id}
@@ -408,29 +372,26 @@ export default function OrderScreen() {
       case 'size':
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Select Cylinder Size</Text>
-            <Text style={styles.stepTitleMM}>{'\u1006\u101C\u1004\u103A\u1012\u102B\u1021\u101B\u103D\u101A\u103A\u1021\u1005\u102C\u1038 \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
+            <Text style={styles.stepTitle}>{t('select_size')}</Text>
+            <Text style={styles.stepTitleMM}>{tMM('select_size')}</Text>
             {cylindersLoading ? (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator size="large" color={Colors.primary} />
-                <Text style={styles.loadingText}>Loading sizes...</Text>
+                <Text style={styles.loadingText}>{t('loading_sizes')}</Text>
               </View>
             ) : cylindersError ? (
               <View style={styles.errorWrap}>
-                <Text style={styles.errorText}>Failed to load cylinder sizes</Text>
+                <Text style={styles.errorText}>{t('failed_sizes')}</Text>
                 <TouchableOpacity
                   style={styles.retryBtn}
-                  onPress={() => {
-                    gasPriceQuery.refetch();
-                    cylinderTypesQuery.refetch();
-                  }}
+                  onPress={() => catalogQuery.refetch()}
                 >
-                  <Text style={styles.retryText}>Retry</Text>
+                  <Text style={styles.retryText}>{t('retry')}</Text>
                 </TouchableOpacity>
               </View>
             ) : cylinderOptions.length === 0 ? (
               <View style={styles.errorWrap}>
-                <Text style={styles.errorText}>No cylinder sizes available for this brand</Text>
+                <Text style={styles.errorText}>{t('no_sizes')}</Text>
               </View>
             ) : (
               <View style={styles.sizeGrid}>
@@ -478,33 +439,51 @@ export default function OrderScreen() {
       case 'type':
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Order Type</Text>
-            <Text style={styles.stepTitleMM}>{'\u1021\u1031\u102C\u103A\u1012\u102B\u1021\u1019\u103B\u102D\u102F\u1038\u1021\u1005\u102C\u1038 \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
+            <Text style={styles.stepTitle}>{t('order_type')}</Text>
+            <Text style={styles.stepTitleMM}>{tMM('order_type')}</Text>
             <View style={styles.typeList}>
-              {ORDER_TYPES.map((type) => (
-                <TouchableOpacity
-                  key={type.id}
-                  style={[
-                    styles.typeOption,
-                    selectedType === type.id && styles.typeOptionSelected,
-                  ]}
-                  onPress={() => setSelectedType(type.id)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.typeOptionLeft}>
-                    <Text style={[styles.typeLabel, selectedType === type.id && styles.typeLabelSelected]}>
-                      {type.label}
-                    </Text>
-                    <Text style={styles.typeLabelMM}>{type.labelMM}</Text>
-                    <Text style={styles.typeDesc}>{type.description}</Text>
-                  </View>
-                  {selectedType === type.id && (
-                    <View style={styles.typeCheck}>
-                      <Check size={18} color={Colors.primary} />
+              {ORDER_TYPES.map((type) => {
+                // Hide new_setup if the selected brand disallows it (from catalog-list).
+                if (type.id === 'new_setup' && selectedCatalogEntry && !selectedCatalogEntry.brand.allow_new_setup) {
+                  return null;
+                }
+                const label = type.id === 'refill' ? t('type_refill')
+                  : type.id === 'new_setup' ? t('type_new_setup')
+                  : type.id === 'exchange' ? t('type_exchange')
+                  : t('type_service_call');
+                const labelMM = type.id === 'refill' ? tMM('type_refill')
+                  : type.id === 'new_setup' ? tMM('type_new_setup')
+                  : type.id === 'exchange' ? tMM('type_exchange')
+                  : tMM('type_service_call');
+                const desc = type.id === 'refill' ? t('type_refill_desc')
+                  : type.id === 'new_setup' ? t('type_new_setup_desc')
+                  : type.id === 'exchange' ? t('type_exchange_desc')
+                  : t('type_service_call_desc');
+                return (
+                  <TouchableOpacity
+                    key={type.id}
+                    style={[
+                      styles.typeOption,
+                      selectedType === type.id && styles.typeOptionSelected,
+                    ]}
+                    onPress={() => setSelectedType(type.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.typeOptionLeft}>
+                      <Text style={[styles.typeLabel, selectedType === type.id && styles.typeLabelSelected]}>
+                        {label}
+                      </Text>
+                      <Text style={styles.typeLabelMM}>{labelMM}</Text>
+                      <Text style={styles.typeDesc}>{desc}</Text>
                     </View>
-                  )}
-                </TouchableOpacity>
-              ))}
+                    {selectedType === type.id && (
+                      <View style={styles.typeCheck}>
+                        <Check size={18} color={Colors.primary} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         );
@@ -527,37 +506,37 @@ export default function OrderScreen() {
                     <MapPin size={16} color="#16A34A" />
                   </View>
                   <View style={styles.deliveryBarTextWrap}>
-                    <Text style={styles.deliveryBarLabel}>Delivering to</Text>
+                    <Text style={styles.deliveryBarLabel}>{t('delivering_to')}</Text>
                     <Text style={styles.deliveryBarAddress} numberOfLines={1}>{selectedAddress.address}</Text>
                   </View>
                 </View>
-                <Text style={styles.deliveryBarChange}>Change</Text>
+                <Text style={styles.deliveryBarChange}>{t('change')}</Text>
               </TouchableOpacity>
             )}
-            <Text style={styles.stepTitle}>Price Breakdown</Text>
-            <Text style={styles.stepTitleMM}>{'\u1008\u1031\u1038\u1014\u103E\u102F\u1014\u103A\u1038\u1021\u101E\u1031\u1038\u1005\u102D\u1010\u103A'}</Text>
+            <Text style={styles.stepTitle}>{t('price_breakdown')}</Text>
+            <Text style={styles.stepTitleMM}>{tMM('price_breakdown')}</Text>
             <View style={styles.pricingCard}>
               <View style={styles.pricingRow}>
                 <Text style={styles.pricingLabel}>
-                  Gas ({selectedCylinder?.size}kg × {formatPrice(selectedCylinder?.pricePerKg || 0)}/kg)
+                  {t('gas')} ({selectedCylinder?.size}kg × {formatPrice(selectedCylinder?.pricePerKg || 0)}/kg)
                 </Text>
                 <Text style={styles.pricingValue}>{formatPrice(pricing.gasPrice)} MMK</Text>
               </View>
               {pricing.cylinderPrice > 0 && (
                 <View style={styles.pricingRow}>
-                  <Text style={styles.pricingLabel}>New Cylinder</Text>
+                  <Text style={styles.pricingLabel}>{t('new_cylinder')}</Text>
                   <Text style={styles.pricingValue}>{formatPrice(pricing.cylinderPrice)} MMK</Text>
                 </View>
               )}
               <View style={styles.pricingRow}>
                 <Text style={styles.pricingLabel}>
-                  {selectedType === 'service_call' ? 'Service Fee' : selectedType === 'exchange' ? 'Exchange Fee' : 'Delivery Fee'}
+                  {selectedType === 'service_call' ? t('service_fee') : selectedType === 'exchange' ? t('exchange_fee') : t('delivery_fee')}
                 </Text>
                 <Text style={styles.pricingValue}>{formatPrice(pricing.deliveryFee)} MMK</Text>
               </View>
               <View style={styles.pricingDivider} />
               <View style={styles.pricingRow}>
-                <Text style={styles.pricingTotal}>Total</Text>
+                <Text style={styles.pricingTotal}>{t('total')}</Text>
                 <Text style={styles.pricingTotalValue}>{formatPrice(pricing.total)} MMK</Text>
               </View>
             </View>
@@ -567,8 +546,8 @@ export default function OrderScreen() {
       case 'address':
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Delivery Address</Text>
-            <Text style={styles.stepTitleMM}>{'\u1015\u102D\u102F\u1037\u1006\u1031\u102C\u1004\u103A\u1019\u100A\u103A\u1037\u101C\u102D\u1015\u103A\u1005\u102C \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
+            <Text style={styles.stepTitle}>{t('delivery_address')}</Text>
+            <Text style={styles.stepTitleMM}>{tMM('delivery_address')}</Text>
             <View style={styles.addressList}>
               {savedAddresses.map((addr) => (
                 <TouchableOpacity
@@ -614,37 +593,43 @@ export default function OrderScreen() {
                     <MapPin size={16} color="#16A34A" />
                   </View>
                   <View style={styles.deliveryBarTextWrap}>
-                    <Text style={styles.deliveryBarLabel}>Delivering to</Text>
+                    <Text style={styles.deliveryBarLabel}>{t('delivering_to')}</Text>
                     <Text style={styles.deliveryBarAddress} numberOfLines={1}>{selectedAddress.address}</Text>
                   </View>
                 </View>
-                <Text style={styles.deliveryBarChange}>Change</Text>
+                <Text style={styles.deliveryBarChange}>{t('change')}</Text>
               </TouchableOpacity>
             )}
-            <Text style={styles.stepTitle}>Payment Method</Text>
-            <Text style={styles.stepTitleMM}>{'\u1004\u103D\u1031\u1015\u1031\u1038\u1001\u103B\u1031\u1019\u103E\u102F \u101B\u103D\u1031\u1038\u1015\u102B'}</Text>
+            <Text style={styles.stepTitle}>{t('payment_method')}</Text>
+            <Text style={styles.stepTitleMM}>{tMM('payment_method')}</Text>
             <View style={styles.paymentList}>
-              {PAYMENT_OPTIONS.map((opt) => (
-                <TouchableOpacity
-                  key={opt.id}
-                  style={[
-                    styles.paymentOption,
-                    selectedPayment === opt.id && styles.paymentOptionSelected,
-                  ]}
-                  onPress={() => setSelectedPayment(opt.id)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.paymentIconWrap, { backgroundColor: opt.color + '15' }]}>
-                    {getPaymentIcon(opt.icon, opt.color)}
-                  </View>
-                  <Text style={[styles.paymentLabel, selectedPayment === opt.id && styles.paymentLabelSelected]}>
-                    {opt.label}
-                  </Text>
-                  {selectedPayment === opt.id && (
-                    <Check size={18} color={Colors.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
+              {PAYMENT_OPTIONS.map((opt) => {
+                const label = opt.id === 'cash' ? t('pay_cash')
+                  : opt.id === 'kbz_pay' ? t('pay_kbz')
+                  : opt.id === 'wave_money' ? t('pay_wave')
+                  : t('pay_cb');
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.paymentOption,
+                      selectedPayment === opt.id && styles.paymentOptionSelected,
+                    ]}
+                    onPress={() => setSelectedPayment(opt.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.paymentIconWrap, { backgroundColor: opt.color + '15' }]}>
+                      {getPaymentIcon(opt.icon, opt.color)}
+                    </View>
+                    <Text style={[styles.paymentLabel, selectedPayment === opt.id && styles.paymentLabelSelected]}>
+                      {label}
+                    </Text>
+                    {selectedPayment === opt.id && (
+                      <Check size={18} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         );
@@ -658,38 +643,55 @@ export default function OrderScreen() {
                   <MapPin size={16} color="#16A34A" />
                 </View>
                 <View style={styles.deliveryBarTextWrap}>
-                  <Text style={styles.deliveryBarLabel}>Delivering to</Text>
+                  <Text style={styles.deliveryBarLabel}>{t('delivering_to')}</Text>
                   <Text style={styles.deliveryBarAddress} numberOfLines={1}>{selectedAddress.address}</Text>
                 </View>
                 <Check size={16} color="#16A34A" />
               </View>
             )}
-            <Text style={styles.stepTitle}>Confirm Order</Text>
-            <Text style={styles.stepTitleMM}>{'\u1021\u1031\u102C\u103A\u1012\u102B \u1021\u1010\u100A\u103A\u1015\u103C\u102F\u1015\u102B'}</Text>
+            <Text style={styles.stepTitle}>{t('confirm_order')}</Text>
+            <Text style={styles.stepTitleMM}>{tMM('confirm_order')}</Text>
             <View style={styles.confirmCard}>
               <View style={styles.confirmRow}>
-                <Text style={styles.confirmLabel}>Brand</Text>
+                <Text style={styles.confirmLabel}>{t('brand')}</Text>
                 <Text style={styles.confirmValue}>{selectedBrand?.name}</Text>
               </View>
               <View style={styles.confirmRow}>
-                <Text style={styles.confirmLabel}>Size</Text>
+                <Text style={styles.confirmLabel}>{t('size')}</Text>
                 <Text style={styles.confirmValue}>{selectedCylinder?.size} kg</Text>
               </View>
               <View style={styles.confirmRow}>
-                <Text style={styles.confirmLabel}>Type</Text>
-                <Text style={styles.confirmValue}>{ORDER_TYPES.find(t => t.id === selectedType)?.label}</Text>
+                <Text style={styles.confirmLabel}>{t('type')}</Text>
+                <Text style={styles.confirmValue}>
+                  {(() => {
+                    const id = selectedType;
+                    const label = id === 'refill' ? t('type_refill')
+                      : id === 'new_setup' ? t('type_new_setup')
+                      : id === 'exchange' ? t('type_exchange')
+                      : t('type_service_call');
+                    return label;
+                  })()}
+                </Text>
               </View>
               <View style={styles.confirmRow}>
-                <Text style={styles.confirmLabel}>Address</Text>
+                <Text style={styles.confirmLabel}>{t('address')}</Text>
                 <Text style={styles.confirmValue} numberOfLines={2}>{selectedAddress?.address}</Text>
               </View>
               <View style={styles.confirmRow}>
-                <Text style={styles.confirmLabel}>Payment</Text>
-                <Text style={styles.confirmValue}>{PAYMENT_OPTIONS.find(p => p.id === selectedPayment)?.label}</Text>
+                <Text style={styles.confirmLabel}>{t('payment')}</Text>
+                <Text style={styles.confirmValue}>
+                  {(() => {
+                    const id = selectedPayment;
+                    return id === 'cash' ? t('pay_cash')
+                      : id === 'kbz_pay' ? t('pay_kbz')
+                      : id === 'wave_money' ? t('pay_wave')
+                      : t('pay_cb');
+                  })()}
+                </Text>
               </View>
               <View style={styles.pricingDivider} />
               <View style={styles.confirmRow}>
-                <Text style={styles.pricingTotal}>Total</Text>
+                <Text style={styles.pricingTotal}>{t('total')}</Text>
                 <Text style={styles.pricingTotalValue}>{formatPrice(pricing.total)} MMK</Text>
               </View>
             </View>
@@ -761,7 +763,7 @@ export default function OrderScreen() {
               ) : (
                 <>
                   <Flame size={20} color="#FFFFFF" />
-                  <Text style={styles.confirmButtonText}>Place Order • {formatPrice(pricing.total)} MMK</Text>
+                  <Text style={styles.confirmButtonText}>{t('place_order')} • {formatPrice(pricing.total)} MMK</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -772,7 +774,7 @@ export default function OrderScreen() {
               disabled={!canProceed()}
               activeOpacity={0.85}
             >
-              <Text style={styles.nextButtonText}>Continue</Text>
+              <Text style={styles.nextButtonText}>{t('continue')}</Text>
             </TouchableOpacity>
           )}
         </View>

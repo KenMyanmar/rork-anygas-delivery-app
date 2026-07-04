@@ -5,6 +5,7 @@ import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { OrderProvider } from "@/providers/OrderProvider";
+import { I18nProvider } from "@/providers/I18nProvider";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -41,7 +42,9 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <AuthProvider>
           <OrderProvider>
-            <RootLayoutNav />
+            <I18nProvider>
+              <RootLayoutNav />
+            </I18nProvider>
           </OrderProvider>
         </AuthProvider>
       </GestureHandlerRootView>

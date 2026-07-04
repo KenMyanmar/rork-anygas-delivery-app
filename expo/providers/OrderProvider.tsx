@@ -45,6 +45,9 @@ interface SupabaseOrderRow {
   payment_method: string;
   status: string;
   assigned_agent_id: string | null;
+  // supplier_id — present on the orders table. When NOT NULL, a supplier has been
+  // assigned (tracker Step 2). Distinct from assigned_agent_id which is the delivery agent.
+  supplier_id: string | null;
   agent_name: string | null;
   agent_phone: string | null;
   agent_latitude: number | null;
@@ -91,6 +94,9 @@ function mapSupabaseOrderToOrder(o: SupabaseOrderRow): Order {
     },
     paymentMethod: o.payment_method as Order['paymentMethod'],
     status: o.status as Order['status'],
+    // supplier_id IS NOT NULL → supplier assigned (Step 2 of 4-stage tracker).
+    // Falls back to assigned_agent_id for resilience if the column isn't joined.
+    supplierAssigned: !!(o.supplier_id || o.assigned_agent_id),
     agent,
     rating: o.rating ?? undefined,
     ratingComment: o.rating_comment ?? undefined,
@@ -283,6 +289,8 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
   }, [orders]);
 
   const getActiveOrder = useCallback(() => {
+    // 4-stage contract: active = not yet delivered and not in a terminal state.
+    // 'dispatched' is retained for backward-compat but is a dead stage in prod data.
     return orders.find(o => ['new', 'in_progress', 'confirmed', 'dispatched'].includes(o.status)) || null;
   }, [orders]);
 

@@ -6,17 +6,19 @@ import {
 } from 'react-native';
 import { Bell } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useI18n } from '@/providers/I18nProvider';
 
 export default function NotificationsScreen() {
+  const { t, tMM } = useI18n();
   return (
     <View style={styles.container}>
       <View style={styles.emptyState}>
         <View style={styles.iconWrap}>
           <Bell size={48} color={Colors.textTertiary} />
         </View>
-        <Text style={styles.emptyText}>No notifications yet</Text>
-        <Text style={styles.emptyTextMM}>အကြောင်းကြားစာ မရှိသေးပါ</Text>
-        <Text style={styles.emptySubtext}>You'll see order updates and promotions here</Text>
+        <Text style={styles.emptyText}>{t('no_notifications')}</Text>
+        <Text style={styles.emptyTextMM}>{tMM('no_notifications')}</Text>
+        <Text style={styles.emptySubtext}>{t('no_notifications_sub')}</Text>
       </View>
     </View>
   );

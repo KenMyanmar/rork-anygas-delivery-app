@@ -26,18 +26,33 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useOrders } from '@/providers/OrderProvider';
-import { OrderStatus } from '@/types';
+import { useI18n } from '@/providers/I18nProvider';
+import { Order } from '@/types';
 
-const STATUS_STEPS: { key: OrderStatus; label: string; labelMM: string }[] = [
-  { key: 'new', label: 'Order Placed', labelMM: 'မှာယူပြီး' },
-  { key: 'in_progress', label: 'Received by Delivery Agent', labelMM: 'ကိုယ်စားလှယ်လက်ခံပြီး' },
-  { key: 'dispatched', label: 'On the Way', labelMM: 'ပို့ဆောင်နေဆဲ' },
-  { key: 'delivered', label: 'Delivered', labelMM: 'ပို့ဆောင်ပြီး' },
-];
+/**
+ * 4-stage tracker contract (verified against prod SQL — 9,916 orders):
+ *   Step 1 "Order Placed"      = row exists (status='new')
+ *   Step 2 "Supplier Assigned" = supplier_id IS NOT NULL (mapped to order.supplierAssigned)
+ *   Step 3 "On the Way"        = status='in_progress'
+ *   Step 4 "Delivered"         = status='delivered'
+ *
+ * 'dispatched' is a dead stage in prod (zero rows, ever) — removed from the tracker.
+ * 'cancelled' and 'failed' are real terminal states (~17% of orders) rendered as
+ * distinct end states, not a stuck progress bar.
+ */
+type StageKey = 'placed' | 'assigned' | 'on_the_way' | 'delivered';
+
+function computeStage(order: Order): number {
+  if (order.status === 'delivered') return 3;
+  if (order.status === 'in_progress') return 2;
+  if (order.supplierAssigned) return 1;
+  return 0;
+}
 
 export default function TrackingScreen() {
   const { getActiveOrder, orders } = useOrders();
   const { orderId } = useLocalSearchParams<{ orderId?: string }>();
+  const { t, tMM } = useI18n();
 
   const activeOrder = orderId
     ? orders.find(o => o.id === orderId) || null
@@ -73,12 +88,12 @@ export default function TrackingScreen() {
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
               <ChevronLeft size={22} color={Colors.textPrimary} />
             </TouchableOpacity>
-            <Text style={styles.topTitle}>Order Tracking</Text>
+            <Text style={styles.topTitle}>{t('track_title')}</Text>
             <View style={{ width: 40 }} />
           </View>
           <View style={styles.emptyState}>
             <Package size={48} color={Colors.textTertiary} />
-            <Text style={styles.emptyText}>No active order</Text>
+            <Text style={styles.emptyText}>{t('no_active_order')}</Text>
           </View>
         </SafeAreaView>
       </View>
@@ -88,11 +103,21 @@ export default function TrackingScreen() {
   const isCancelled = activeOrder.status === 'cancelled';
   const isFailed = activeOrder.status === 'failed';
   const isTerminal = isCancelled || isFailed;
-  const currentStepIndex = isTerminal ? -1 : STATUS_STEPS.findIndex(s => s.key === activeOrder.status);
+  const currentStage = isTerminal ? -1 : computeStage(activeOrder);
 
   const orderLabel = [activeOrder.brandName, activeOrder.cylinderSize ? `${activeOrder.cylinderSize} kg` : null].filter(Boolean).join(' · ') || 'Gas';
 
-  const orderTypeLabel = activeOrder.orderType === 'refill' ? 'Refill' : activeOrder.orderType === 'new_setup' ? 'New Setup' : 'Exchange';
+  const orderTypeLabel = activeOrder.orderType === 'refill' ? t('type_refill')
+    : activeOrder.orderType === 'new_setup' ? t('type_new_setup')
+    : activeOrder.orderType === 'exchange' ? t('type_exchange')
+    : t('type_service_call');
+
+  const STAGES: { key: StageKey; label: string; labelMM: string }[] = [
+    { key: 'placed', label: t('stage_placed'), labelMM: tMM('stage_placed') },
+    { key: 'assigned', label: t('stage_assigned'), labelMM: tMM('stage_assigned') },
+    { key: 'on_the_way', label: t('stage_on_the_way'), labelMM: tMM('stage_on_the_way') },
+    { key: 'delivered', label: t('stage_delivered'), labelMM: tMM('stage_delivered') },
+  ];
 
   return (
     <View style={styles.container}>
@@ -101,7 +126,7 @@ export default function TrackingScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <ChevronLeft size={22} color={Colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.topTitle}>Order Tracking</Text>
+          <Text style={styles.topTitle}>{t('track_title')}</Text>
           <View style={{ width: 40 }} />
         </View>
 
@@ -120,13 +145,13 @@ export default function TrackingScreen() {
             <Text style={styles.orderTotal}>{activeOrder.pricing.total.toLocaleString()} K</Text>
           </View>
 
-          {activeOrder.estimatedDelivery && activeOrder.status !== 'delivered' && (
+          {activeOrder.estimatedDelivery && activeOrder.status !== 'delivered' && !isTerminal && (
             <View style={styles.etaCard}>
               <Animated.View style={{ opacity: pulseAnim }}>
                 <Clock size={20} color={Colors.primary} />
               </Animated.View>
               <View>
-                <Text style={styles.etaLabel}>Estimated Delivery</Text>
+                <Text style={styles.etaLabel}>{t('est_delivery')}</Text>
                 <Text style={styles.etaValue}>{activeOrder.estimatedDelivery}</Text>
               </View>
             </View>
@@ -137,8 +162,8 @@ export default function TrackingScreen() {
               <View style={styles.terminalIconWrap}>
                 <XCircle size={40} color={Colors.error} />
               </View>
-              <Text style={styles.terminalTitle}>Order Cancelled</Text>
-              <Text style={styles.terminalTitleMM}>{'မှာယူမှု ပယ်ဖျက်ပြီး'}</Text>
+              <Text style={styles.terminalTitle}>{t('order_cancelled')}</Text>
+              <Text style={styles.terminalTitleMM}>{tMM('order_cancelled')}</Text>
               {(activeOrder as any).cancelled_reason ? (
                 <Text style={styles.terminalReason}>{(activeOrder as any).cancelled_reason}</Text>
               ) : null}
@@ -148,7 +173,7 @@ export default function TrackingScreen() {
                 activeOpacity={0.85}
               >
                 <Home size={18} color="#FFFFFF" />
-                <Text style={styles.terminalButtonText}>Back to Home</Text>
+                <Text style={styles.terminalButtonText}>{t('back_home')}</Text>
               </TouchableOpacity>
             </View>
           ) : isFailed ? (
@@ -156,8 +181,8 @@ export default function TrackingScreen() {
               <View style={[styles.terminalIconWrap, { backgroundColor: Colors.warningLight }]}>
                 <AlertTriangle size={40} color={Colors.warning} />
               </View>
-              <Text style={styles.terminalTitle}>Delivery Unsuccessful</Text>
-              <Text style={styles.terminalTitleMM}>{'ပို့ဆောင်မှု မအောင်မြင်ပါ'}</Text>
+              <Text style={styles.terminalTitle}>{t('delivery_unsuccessful')}</Text>
+              <Text style={styles.terminalTitleMM}>{tMM('delivery_unsuccessful')}</Text>
               <View style={styles.terminalActions}>
                 <TouchableOpacity
                   style={[styles.terminalButton, styles.terminalButtonOutline]}
@@ -165,7 +190,7 @@ export default function TrackingScreen() {
                   activeOpacity={0.85}
                 >
                   <Phone size={18} color={Colors.primary} />
-                  <Text style={[styles.terminalButtonText, { color: Colors.primary }]}>Contact 8484</Text>
+                  <Text style={[styles.terminalButtonText, { color: Colors.primary }]}>{t('contact_8484')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.terminalButton}
@@ -173,17 +198,17 @@ export default function TrackingScreen() {
                   activeOpacity={0.85}
                 >
                   <Home size={18} color="#FFFFFF" />
-                  <Text style={styles.terminalButtonText}>Back to Home</Text>
+                  <Text style={styles.terminalButtonText}>{t('back_home')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
           ) : (
             <View style={styles.statusCard}>
-              <Text style={styles.sectionTitle}>Order Status</Text>
-              {STATUS_STEPS.map((step, index) => {
-                const isCompleted = index <= currentStepIndex;
-                const isCurrent = index === currentStepIndex;
-                const isLast = index === STATUS_STEPS.length - 1;
+              <Text style={styles.sectionTitle}>{t('order_status')}</Text>
+              {STAGES.map((step, index) => {
+                const isCompleted = index <= currentStage;
+                const isCurrent = index === currentStage;
+                const isLast = index === STAGES.length - 1;
                 return (
                   <View key={step.key} style={styles.statusRow}>
                     <View style={styles.statusIndicator}>
@@ -212,7 +237,7 @@ export default function TrackingScreen() {
 
           {activeOrder.agent && (
             <View style={styles.agentCard}>
-              <Text style={styles.sectionTitle}>Delivery Agent</Text>
+              <Text style={styles.sectionTitle}>{t('delivery_agent')}</Text>
               <View style={styles.agentInfo}>
                 <View style={styles.agentAvatar}>
                   <User size={24} color={Colors.primary} />
@@ -233,7 +258,7 @@ export default function TrackingScreen() {
           )}
 
           <View style={styles.addressCard}>
-            <Text style={styles.sectionTitle}>Delivery Address</Text>
+            <Text style={styles.sectionTitle}>{t('delivery_address')}</Text>
             <View style={styles.addressRow}>
               <MapPin size={18} color={Colors.primary} />
               <View style={{ flex: 1 }}>
@@ -250,7 +275,7 @@ export default function TrackingScreen() {
               activeOpacity={0.85}
             >
               <Star size={20} color="#FFFFFF" />
-              <Text style={styles.rateButtonText}>Rate this delivery</Text>
+              <Text style={styles.rateButtonText}>{t('rate_delivery')}</Text>
             </TouchableOpacity>
           )}
 

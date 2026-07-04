@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Animated,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -18,8 +19,9 @@ import { useQuery } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useOrders } from '@/providers/OrderProvider';
-import { supabase } from '@/lib/supabase';
 import { OrderStatus } from '@/types';
+import { fetchCatalog, displayBrandName } from '@/lib/catalog';
+import { useI18n } from '@/providers/I18nProvider';
 
 interface SupabaseBrand {
   id: string;
@@ -70,6 +72,7 @@ function getStatusColor(status: OrderStatus) {
 export default function HomeScreen() {
   const { activeCustomer, activeProfile, getDefaultAddress } = useAuth();
   const { getLastOrder, getActiveOrder } = useOrders();
+  const { t, tMM, isMM } = useI18n();
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -77,23 +80,19 @@ export default function HomeScreen() {
   const lastOrder = getLastOrder();
   const activeOrder = getActiveOrder();
 
+  // Use the catalog-list edge function — same source as the Mini App and the order screen.
   const brandsQuery = useQuery({
-    queryKey: ['brands'],
+    queryKey: ['catalog'],
     queryFn: async () => {
-      console.log('[Home] Fetching brands from Supabase');
-      const { data, error } = await supabase
-        .from('brands')
-        .select('id, name, logo_url, sort_order')
-        .eq('is_active', true)
-        .order('sort_order');
-
-      if (error) {
-        console.log('[Home] Brands fetch error:', error.message);
-        return [];
-      }
-      return (data || []) as SupabaseBrand[];
+      console.log('[Home] Fetching catalog via catalog-list');
+      return await fetchCatalog();
     },
   });
+
+  const brands = useMemo(() => {
+    if (!brandsQuery.data) return [];
+    return brandsQuery.data.map(entry => entry.brand);
+  }, [brandsQuery.data]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
@@ -153,7 +152,7 @@ export default function HomeScreen() {
                   <Text style={styles.appName}>AnyGas 8484</Text>
                 </View>
                 <Text style={styles.greeting}>
-                  {activeCustomer ? `Hi, ${activeCustomer.full_name || activeCustomer.name}` : 'Welcome'}
+                  {activeCustomer ? `${isMM ? 'မင်္ဂလာပါ' : 'Hi'}, ${activeCustomer.full_name || activeCustomer.name}` : t('welcome')}
                 </Text>
               </View>
             </View>
@@ -179,7 +178,7 @@ export default function HomeScreen() {
               >
                 <View style={styles.activeOrderHeader}>
                   <Truck size={18} color={Colors.primary} />
-                  <Text style={styles.activeOrderTitle}>Active Order</Text>
+                  <Text style={styles.activeOrderTitle}>{t('active_order')}</Text>
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(activeOrder.status) }]} />
                   <Text style={[styles.activeOrderStatus, { color: getStatusColor(activeOrder.status) }]}>
                     {getCustomerStatusLabel(activeOrder.status)}
@@ -197,7 +196,7 @@ export default function HomeScreen() {
                   )}
                 </View>
                 <View style={styles.trackButton}>
-                  <Text style={styles.trackButtonText}>Track Order</Text>
+                  <Text style={styles.trackButtonText}>{t('track_order')}</Text>
                   <ChevronRight size={16} color={Colors.primary} />
                 </View>
               </TouchableOpacity>
@@ -213,16 +212,16 @@ export default function HomeScreen() {
                 <View style={styles.heroIconWrap}>
                   <Flame size={36} color="#FFFFFF" strokeWidth={2} />
                 </View>
-                <Text style={styles.heroTitle}>ORDER GAS NOW</Text>
-                <Text style={styles.heroTitleMM}>{'\u1002\u1000\u103A\u1005\u103A\u1019\u103E\u102C\u1019\u101A\u103A'}</Text>
-                <Text style={styles.heroSubtitle}>Fast delivery to your door</Text>
+                <Text style={styles.heroTitle}>{isMM ? 'အခုပဲ မှာယူပါ' : 'ORDER GAS NOW'}</Text>
+                <Text style={styles.heroTitleMM}>{tMM('order_gas_now')}</Text>
+                <Text style={styles.heroSubtitle}>{t('fast_delivery')}</Text>
               </TouchableOpacity>
             </Animated.View>
 
             {lastOrder && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Quick Reorder</Text>
-                <Text style={styles.sectionTitleMM}>{'\u1015\u103C\u1014\u103A\u1019\u103E\u102C\u1019\u101A\u103A'}</Text>
+                <Text style={styles.sectionTitle}>{t('quick_reorder')}</Text>
+                <Text style={styles.sectionTitleMM}>{tMM('quick_reorder')}</Text>
                 <TouchableOpacity
                   style={styles.reorderCard}
                   onPress={handleReorder}
@@ -236,7 +235,7 @@ export default function HomeScreen() {
                         {lastOrder.brandName || 'Gas'}
                       </Text>
                       <Text style={styles.reorderDetails}>
-                        {lastOrder.cylinderSize}kg • {lastOrder.orderType === 'refill' ? 'Refill' : lastOrder.orderType === 'new_setup' ? 'New Setup' : 'Exchange'}
+                        {lastOrder.cylinderSize}kg • {lastOrder.orderType === 'refill' ? t('type_refill') : lastOrder.orderType === 'new_setup' ? t('type_new_setup') : lastOrder.orderType === 'exchange' ? t('type_exchange') : t('type_service_call')}
                       </Text>
                       <Text style={styles.reorderPrice}>
                         {lastOrder.pricing.total.toLocaleString()} MMK
@@ -245,22 +244,24 @@ export default function HomeScreen() {
                   </View>
                   <View style={styles.reorderButton}>
                     <RefreshCw size={18} color={Colors.primary} />
-                    <Text style={styles.reorderButtonText}>Reorder</Text>
+                    <Text style={styles.reorderButtonText}>{t('quick_reorder')}</Text>
                   </View>
                 </TouchableOpacity>
               </View>
             )}
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Our Brands</Text>
+              <Text style={styles.sectionTitle}>{t('our_brands')}</Text>
+              <Text style={styles.sectionTitleMM}>{tMM('our_brands')}</Text>
               {brandsQuery.isLoading ? (
                 <View style={styles.brandsLoading}>
                   <ActivityIndicator size="small" color={Colors.primary} />
                 </View>
               ) : (
                 <View style={styles.brandsRow}>
-                  {(brandsQuery.data || []).map((brand) => {
+                  {brands.map((brand) => {
                     const color = getBrandColor(brand.name);
+                    const displayName = displayBrandName(brand.name);
                     return (
                       <TouchableOpacity
                         key={brand.id}
@@ -268,10 +269,18 @@ export default function HomeScreen() {
                         onPress={handleOrderNow}
                         activeOpacity={0.7}
                       >
-                        <View style={[styles.brandIcon, { backgroundColor: color + '15' }]}>
-                          <Package size={24} color={color} />
-                        </View>
-                        <Text style={styles.brandName}>{brand.name}</Text>
+                        {brand.logo_url ? (
+                          <Image
+                            source={{ uri: brand.logo_url }}
+                            style={styles.brandLogoImage}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={[styles.brandIcon, { backgroundColor: color + '15' }]}>
+                            <Package size={24} color={color} />
+                          </View>
+                        )}
+                        <Text style={styles.brandName}>{displayName}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -553,6 +562,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 10,
+  },
+  brandLogoImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     marginBottom: 10,
   },
   brandName: {

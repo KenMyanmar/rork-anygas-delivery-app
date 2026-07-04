@@ -24,18 +24,20 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
+import { useI18n } from '@/providers/I18nProvider';
 
 export default function ProfileScreen() {
   const { activeCustomer, activeProfile, savedAddresses, phoneNumber, logout } = useAuth();
+  const { t, tMM, isMM, isEN, changeLanguage } = useI18n();
 
   const handleLogout = useCallback(() => {
     Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out?',
+      t('log_out'),
+      t('log_out_confirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Log Out',
+          text: t('log_out'),
           style: 'destructive',
           onPress: async () => {
             console.log('[Profile] User confirmed logout');
@@ -45,7 +47,7 @@ export default function ProfileScreen() {
         },
       ]
     );
-  }, [logout]);
+  }, [logout, t]);
 
   return (
     <ScrollView
@@ -76,8 +78,8 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <MapPin size={18} color={Colors.primary} />
-            <Text style={styles.sectionTitle}>Registered Address</Text>
-            <Text style={styles.sectionTitleMM}>မှတ်ပုံတင်ထားသောလိပ်စာ</Text>
+            <Text style={styles.sectionTitle}>{t('registered_address')}</Text>
+            <Text style={styles.sectionTitleMM}>{tMM('registered_address')}</Text>
           </View>
           <View style={styles.addressCard}>
             <View style={styles.addressIcon}>
@@ -91,8 +93,8 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <MapPin size={18} color={Colors.primary} />
-          <Text style={styles.sectionTitle}>Saved Delivery Addresses</Text>
-          <Text style={styles.sectionTitleMM}>သိမ်းထားသောလိပ်စာများ</Text>
+          <Text style={styles.sectionTitle}>{t('saved_addresses')}</Text>
+          <Text style={styles.sectionTitleMM}>{tMM('saved_addresses')}</Text>
         </View>
         <View style={styles.addressesList}>
           {savedAddresses.length > 0 ? (
@@ -107,33 +109,55 @@ export default function ProfileScreen() {
                 </View>
                 {addr.isDefault && (
                   <View style={styles.defaultBadge}>
-                    <Text style={styles.defaultBadgeText}>Default</Text>
+                    <Text style={styles.defaultBadgeText}>{t('default')}</Text>
                   </View>
                 )}
               </View>
             ))
           ) : (
             <View style={styles.emptyAddresses}>
-              <Text style={styles.emptyText}>No saved addresses yet</Text>
+              <Text style={styles.emptyText}>{t('no_saved_addresses')}</Text>
             </View>
           )}
         </View>
       </View>
 
       <View style={styles.section}>
+        <View style={styles.langCard}>
+          <Text style={styles.langTitle}>{isMM ? 'ဘာသာစကား' : 'Language'}</Text>
+          <View style={styles.langToggle}>
+            <TouchableOpacity
+              style={[styles.langBtn, isMM && styles.langBtnActive]}
+              onPress={() => changeLanguage('mm')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.langBtnText, isMM && styles.langBtnTextActive]}>မြန်မာ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.langBtn, isEN && styles.langBtnActive]}
+              onPress={() => changeLanguage('en')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.langBtnText, isEN && styles.langBtnTextActive]}>English</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.section}>
         <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
           <Shield size={20} color={Colors.textSecondary} />
-          <Text style={styles.menuItemText}>Privacy & Security</Text>
+          <Text style={styles.menuItemText}>{t('privacy_security')}</Text>
           <ChevronRight size={18} color={Colors.textTertiary} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
           <HelpCircle size={20} color={Colors.textSecondary} />
-          <Text style={styles.menuItemText}>Help & Support</Text>
+          <Text style={styles.menuItemText}>{t('help_support')}</Text>
           <ChevronRight size={18} color={Colors.textTertiary} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
           <FileText size={20} color={Colors.textSecondary} />
-          <Text style={styles.menuItemText}>Terms of Service</Text>
+          <Text style={styles.menuItemText}>{t('terms')}</Text>
           <ChevronRight size={18} color={Colors.textTertiary} />
         </TouchableOpacity>
       </View>
@@ -144,7 +168,7 @@ export default function ProfileScreen() {
         activeOpacity={0.7}
       >
         <LogOut size={20} color={Colors.error} />
-        <Text style={styles.logoutText}>Log Out</Text>
+        <Text style={styles.logoutText}>{t('log_out')}</Text>
       </TouchableOpacity>
 
       <Text style={styles.version}>AnyGas 8484 v1.0.0</Text>
@@ -315,6 +339,44 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500' as const,
     color: Colors.textPrimary,
+  },
+  langCard: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    backgroundColor: Colors.surface,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  langTitle: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.textPrimary,
+  },
+  langToggle: {
+    flexDirection: 'row' as const,
+    backgroundColor: Colors.background,
+    borderRadius: 10,
+    padding: 3,
+    gap: 2,
+  },
+  langBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  langBtnActive: {
+    backgroundColor: Colors.primary,
+  },
+  langBtnText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+  },
+  langBtnTextActive: {
+    color: '#FFFFFF',
   },
   logoutButton: {
     flexDirection: 'row',
