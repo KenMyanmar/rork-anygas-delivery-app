@@ -38,10 +38,14 @@ interface SupabaseOrderRow {
   gas_subtotal: number;
   cylinder_subtotal: number;
   delivery_fee: number;
+  // vC12 #3: `orders.address` (text, NOT NULL) is the only address column on the
+  // orders table. `delivery_address_text` does not exist in prod schema — it was a
+  // ghost read that blanked the address on every order card. lat/lng/id below are
+  // not part of the approved #3 fix; they default harmlessly when absent.
   delivery_address_id: string | null;
   delivery_latitude: number | null;
   delivery_longitude: number | null;
-  delivery_address_text: string | null;
+  address: string;
   payment_method: string;
   status: string;
   assigned_agent_id: string | null;
@@ -87,7 +91,8 @@ function mapSupabaseOrderToOrder(o: SupabaseOrderRow): Order {
     address: {
       id: o.delivery_address_id || '',
       label: '',
-      address: o.delivery_address_text || '',
+      // vC12 #3: read from the real `orders.address` column (text, NOT NULL).
+      address: o.address || '',
       latitude: o.delivery_latitude || 0,
       longitude: o.delivery_longitude || 0,
       isDefault: false,
@@ -260,29 +265,23 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     }
   }, [customerId]);
 
+  // vC12 #2: UI-only, local pending state. The previous implementation wrote to
+  // `orders.rating` / `orders.rating_comment` — columns that do NOT exist in prod
+  // (verified via information_schema). The write silently failed (error logged,
+  // swallowed) on every attempt, and `order_ratings` is at 0 rows. Until the A2
+  // Grand Plan repoints this at `order_ratings` (with RLS review), we keep the
+  // rating UI functional but perform NO server write. The rating is persisted
+  // locally via AsyncStorage so the UI reflects the user's choice within the app.
   const rateOrder = useCallback(async (orderId: string, rating: number, comment?: string) => {
-    console.log('[Orders] Rating order:', orderId, 'stars:', rating);
+    console.log('[Orders] Rating order (UI-only, pending A2):', orderId, 'stars:', rating);
     const updated = orders.map(o =>
       o.id === orderId ? { ...o, rating, ratingComment: comment } : o
     );
     setOrders(updated);
     await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
-
-    if (customerId) {
-      const { error } = await supabase
-        .fromUpdate('orders', {
-          rating,
-          rating_comment: comment ?? null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', orderId);
-
-      if (error) {
-        console.log('[Orders] Rating update error:', error.message);
-      }
-      queryClient.invalidateQueries({ queryKey: ['orders'] });
-    }
-  }, [orders, customerId, queryClient]);
+    // Intentionally no `supabase.fromUpdate('orders', { rating, ... })` call —
+    // those columns don't exist. A2 will write to `order_ratings` instead.
+  }, [orders]);
 
   const getLastOrder = useCallback(() => {
     return orders[0] || null;
