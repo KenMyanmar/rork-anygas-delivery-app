@@ -30,7 +30,7 @@ export const MOCK_ORDERS: Order[] = [
     address: MOCK_ADDRESSES[0],
     paymentMethod: 'cash',
     status: 'delivered',
-    agent: { id: 'agent_1', name: 'Ko Aung', phone: '+959123456789', latitude: 16.8409, longitude: 96.1735 },
+    // vC13: agent removed — dead schema (keyed off ghost columns).
     rating: 5,
     ratingComment: 'Fast delivery!',
     createdAt: '2026-02-25T10:30:00Z',
@@ -45,11 +45,11 @@ export const MOCK_ORDERS: Order[] = [
     pricing: { gasPrice: 11500, cylinderPrice: 0, deliveryFee: 3000, total: 14500 },
     address: MOCK_ADDRESSES[1],
     paymentMethod: 'kbz_pay',
-    status: 'dispatched',
-    agent: { id: 'agent_2', name: 'Ko Zaw', phone: '+959987654321', latitude: 16.8500, longitude: 96.1700 },
+    status: 'in_progress',
+    // vC13: agent + estimatedDelivery removed — ghost columns / no eta column.
+    supplierAssigned: true,
     createdAt: '2026-02-27T08:00:00Z',
     updatedAt: '2026-02-27T08:45:00Z',
-    estimatedDelivery: '30 min',
   },
 ];
 

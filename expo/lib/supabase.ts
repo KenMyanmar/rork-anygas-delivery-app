@@ -46,8 +46,89 @@ function getAuthHeaders(token?: string): Record<string, string> {
   };
 }
 
+/**
+ * Token refresh — vC13 Task A.
+ *
+ * Supabase access tokens expire after ~1 hour. Without refresh, every session
+ * dies and users are forced through a fresh 20-MMK OTP on nearly every app
+ * open. This function POSTs the stored refresh_token to the token endpoint
+ * and stores the new session.
+ *
+ * Deduplicated: concurrent callers share the same in-flight promise so we
+ * never fire two refreshes simultaneously. On failure, signs out cleanly.
+ */
+let refreshInFlight: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async (): Promise<string | null> => {
+    try {
+      const stored = await AsyncStorage.getItem(SESSION_KEY);
+      if (!stored) return null;
+      const session = JSON.parse(stored) as SupabaseSession;
+      if (!session.refresh_token) return null;
+
+      console.log('[Supabase] Refreshing access token...');
+      const response = await fetch(
+        `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
+        {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ refresh_token: session.refresh_token }),
+        },
+      );
+
+      if (!response.ok) {
+        console.log('[Supabase] Token refresh failed:', response.status);
+        currentSession = null;
+        await AsyncStorage.removeItem(SESSION_KEY);
+        notifyListeners('SIGNED_OUT', null);
+        return null;
+      }
+
+      const result = await response.json();
+      const newSession: SupabaseSession = {
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        expires_in: result.expires_in,
+        expires_at: result.expires_at,
+        token_type: result.token_type || 'bearer',
+        user: result.user,
+      };
+
+      currentSession = newSession;
+      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(newSession));
+      notifyListeners('TOKEN_REFRESHED', newSession);
+      console.log('[Supabase] Token refreshed for user:', newSession.user?.id);
+      return newSession.access_token;
+    } catch (e) {
+      console.log('[Supabase] Token refresh error:', e);
+      currentSession = null;
+      await AsyncStorage.removeItem(SESSION_KEY);
+      notifyListeners('SIGNED_OUT', null);
+      return null;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+/** Check whether the current token is expired or about to expire (within 60s). */
+function isTokenExpired(session: SupabaseSession | null): boolean {
+  if (!session?.expires_at) return false; // no expiry info — assume valid
+  const now = Math.floor(Date.now() / 1000);
+  return session.expires_at - now <= 60;
+}
+
 async function getAccessToken(): Promise<string | null> {
   if (currentSession?.access_token) {
+    if (isTokenExpired(currentSession)) {
+      return await refreshAccessToken();
+    }
     return currentSession.access_token;
   }
   try {
@@ -55,6 +136,9 @@ async function getAccessToken(): Promise<string | null> {
     if (stored) {
       const session = JSON.parse(stored) as SupabaseSession;
       currentSession = session;
+      if (isTokenExpired(session)) {
+        return await refreshAccessToken();
+      }
       return session.access_token;
     }
   } catch (e) {
@@ -173,7 +257,17 @@ class PostgrestFilterBuilder<T = unknown> {
       }
 
       console.log('[Supabase REST]', this.method, fullUrl);
-      const response = await fetch(fullUrl, fetchOptions);
+      let response = await fetch(fullUrl, fetchOptions);
+      // vC13 Task A: on 401, attempt one token refresh and retry once.
+      if (response.status === 401) {
+        console.log('[Supabase REST] 401, attempting token refresh...');
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          fetchHeaders['Authorization'] = `Bearer ${newToken}`;
+          response = await fetch(fullUrl, { ...fetchOptions, headers: fetchHeaders });
+          console.log('[Supabase REST] Retried after refresh, status:', response.status);
+        }
+      }
       const text = await response.text();
 
       if (!response.ok) {
@@ -208,6 +302,18 @@ class SupabaseRestClient {
         if (stored) {
           const session = JSON.parse(stored) as SupabaseSession;
           currentSession = session;
+          // vC13 Task A: refresh expired tokens on app open so users don't
+          // re-OTP on every launch. Access tokens expire ~1 hour; if expired
+          // (or within 60s of expiry), refresh via refresh_token grant.
+          if (isTokenExpired(session)) {
+            console.log('[Supabase] Session token expired, refreshing on restore...');
+            const newToken = await refreshAccessToken();
+            if (newToken) {
+              return { data: { session: currentSession } };
+            }
+            // Refresh failed — signed out via refreshAccessToken
+            return { data: { session: null } };
+          }
           console.log('[Supabase] Restored session for user:', session.user?.id);
           return { data: { session } };
         }
@@ -350,15 +456,30 @@ class SupabaseRestClient {
         const url = `${SUPABASE_URL}/functions/v1/${functionName}`;
         console.log('[Supabase] Invoking function:', functionName);
 
-        const response = await fetch(url, {
+        const fnHeaders: Record<string, string> = {
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
+        };
+        const fnBody = options?.body ? JSON.stringify(options.body) : undefined;
+        let response = await fetch(url, {
           method: 'POST',
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
-          },
-          body: options?.body ? JSON.stringify(options.body) : undefined,
+          headers: fnHeaders,
+          body: fnBody,
         });
+        // vC13 Task A: on 401, attempt one token refresh and retry once.
+        if (response.status === 401) {
+          console.log('[Supabase] Function 401, attempting token refresh...');
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            response = await fetch(url, {
+              method: 'POST',
+              headers: { ...fnHeaders, 'Authorization': `Bearer ${newToken}` },
+              body: fnBody,
+            });
+            console.log('[Supabase] Function retried after refresh, status:', response.status);
+          }
+        }
 
         const text = await response.text();
         let data: unknown = null;

@@ -348,6 +348,30 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return savedAddresses.find(a => a.isDefault) || savedAddresses[0] || null;
   }, [savedAddresses]);
 
+  // vC13 Task B: save delivery address + township to the customer's own row.
+  // Uses customers_update_own_profile RLS (auth_user_id = auth.uid()), verified
+  // in prod. Updates ONLY address + township columns — nothing else.
+  const updateCustomerAddress = useCallback(async (address: string, township: string) => {
+    if (!activeCustomer) {
+      throw new Error('No active customer — cannot update address');
+    }
+    console.log('[Auth] Updating address for customer:', activeCustomer.id);
+    const { error } = await supabase
+      .fromUpdate('customers', { address, township })
+      .eq('id', activeCustomer.id);
+
+    if (error) {
+      console.log('[Auth] Address update error:', error.message);
+      throw new Error(error.message);
+    }
+
+    const updated: Customer = { ...activeCustomer, address, township };
+    setActiveCustomer(updated);
+    await AsyncStorage.setItem(ACTIVE_CUSTOMER_KEY, JSON.stringify(updated));
+    queryClient.invalidateQueries({ queryKey: ['orders'] });
+    console.log('[Auth] Address updated successfully');
+  }, [activeCustomer, queryClient]);
+
   const activeProfile = activeCustomer ? {
     id: activeCustomer.id,
     phoneNumber: activeCustomer.phone,
@@ -374,5 +398,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     registerNewCustomer,
     addAddress,
     getDefaultAddress,
+    updateCustomerAddress,
   };
 });

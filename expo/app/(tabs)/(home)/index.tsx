@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Flame, MapPin, ChevronRight, Package, Clock, Truck, RefreshCw } from 'lucide-react-native';
+import { Flame, MapPin, ChevronRight, Package, Truck, RefreshCw } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -188,12 +188,9 @@ export default function HomeScreen() {
                   <Text style={styles.activeOrderBrand}>
                     {activeOrder.brandName || 'Gas'} {activeOrder.cylinderSize}kg
                   </Text>
-                  {activeOrder.estimatedDelivery && (
-                    <View style={styles.etaRow}>
-                      <Clock size={13} color={Colors.textSecondary} />
-                      <Text style={styles.etaText}>ETA: {activeOrder.estimatedDelivery}</Text>
-                    </View>
-                  )}
+                  {/* vC13: fake ETA removed — no eta column exists on orders
+                      (bounded-negative). The tracker shows honest stage-based
+                      ranges instead. Real ETA arrives with Lane 2 item 5. */}
                 </View>
                 <View style={styles.trackButton}>
                   <Text style={styles.trackButtonText}>{t('track_order')}</Text>
@@ -235,7 +232,7 @@ export default function HomeScreen() {
                         {lastOrder.brandName || 'Gas'}
                       </Text>
                       <Text style={styles.reorderDetails}>
-                        {lastOrder.cylinderSize}kg • {lastOrder.orderType === 'refill' ? t('type_refill') : lastOrder.orderType === 'new_setup' ? t('type_new_setup') : lastOrder.orderType === 'exchange' ? t('type_exchange') : t('type_service_call')}
+                        {lastOrder.cylinderSize}kg • {lastOrder.orderType === 'refill' ? t('type_refill') : t('type_new_setup')}
                       </Text>
                       <Text style={styles.reorderPrice}>
                         {lastOrder.pricing.total.toLocaleString()} MMK

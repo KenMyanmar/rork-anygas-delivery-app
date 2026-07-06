@@ -17,7 +17,6 @@ import {
   Clock,
   CheckCircle,
   Circle,
-  User,
   Star,
   Package,
   XCircle,
@@ -70,12 +69,10 @@ export default function TrackingScreen() {
     return () => pulse.stop();
   }, []);
 
-  const handleCallAgent = useCallback(() => {
-    if (activeOrder?.agent?.phone) {
-      Linking.openURL(`tel:${activeOrder.agent.phone}`);
-    }
-  }, [activeOrder]);
-
+  // vC13: agent call removed — the agent card was keyed off ghost columns
+  // (assigned_agent_id / agent_name / agent_phone) that don't exist on orders.
+  // Live agent display + call arrives with Lane 2 item 5 (realtime tracking).
+  // The 8484 hotline remains available on the failed-delivery terminal state.
   const handleRate = useCallback(() => {
     router.push('/(tabs)/(home)/rating');
   }, []);
@@ -108,15 +105,20 @@ export default function TrackingScreen() {
   const orderLabel = [activeOrder.brandName, activeOrder.cylinderSize ? `${activeOrder.cylinderSize} kg` : null].filter(Boolean).join(' · ') || 'Gas';
 
   const orderTypeLabel = activeOrder.orderType === 'refill' ? t('type_refill')
-    : activeOrder.orderType === 'new_setup' ? t('type_new_setup')
-    : activeOrder.orderType === 'exchange' ? t('type_exchange')
-    : t('type_service_call');
+    : t('type_new_setup');
 
-  const STAGES: { key: StageKey; label: string; labelMM: string }[] = [
-    { key: 'placed', label: t('stage_placed'), labelMM: tMM('stage_placed') },
-    { key: 'assigned', label: t('stage_assigned'), labelMM: tMM('stage_assigned') },
-    { key: 'on_the_way', label: t('stage_on_the_way'), labelMM: tMM('stage_on_the_way') },
-    { key: 'delivered', label: t('stage_delivered'), labelMM: tMM('stage_delivered') },
+  // vC13: honest stage-based copy. No eta column exists on orders (bounded-
+  // negative), so we show a typical range instead of a fabricated "45 min".
+  // Real ETA arrives with Lane 2 item 5 (realtime publication fix).
+  const STAGES: { key: StageKey; label: string; labelMM: string; hint: string; hintMM: string }[] = [
+    { key: 'placed', label: t('stage_placed'), labelMM: tMM('stage_placed'),
+      hint: t('stage_placed_hint'), hintMM: tMM('stage_placed_hint') },
+    { key: 'assigned', label: t('stage_assigned'), labelMM: tMM('stage_assigned'),
+      hint: t('stage_assigned_hint'), hintMM: tMM('stage_assigned_hint') },
+    { key: 'on_the_way', label: t('stage_on_the_way'), labelMM: tMM('stage_on_the_way'),
+      hint: t('stage_on_the_way_hint'), hintMM: tMM('stage_on_the_way_hint') },
+    { key: 'delivered', label: t('stage_delivered'), labelMM: tMM('stage_delivered'),
+      hint: t('stage_delivered_hint'), hintMM: tMM('stage_delivered_hint') },
   ];
 
   return (
@@ -145,14 +147,16 @@ export default function TrackingScreen() {
             <Text style={styles.orderTotal}>{activeOrder.pricing.total.toLocaleString()} K</Text>
           </View>
 
-          {activeOrder.estimatedDelivery && activeOrder.status !== 'delivered' && !isTerminal && (
+          {/* vC13: honest ETA card. No eta column exists on orders — show a
+              typical range for the current stage instead of a fabricated time. */}
+          {!isTerminal && activeOrder.status !== 'delivered' && (
             <View style={styles.etaCard}>
               <Animated.View style={{ opacity: pulseAnim }}>
                 <Clock size={20} color={Colors.primary} />
               </Animated.View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.etaLabel}>{t('est_delivery')}</Text>
-                <Text style={styles.etaValue}>{activeOrder.estimatedDelivery}</Text>
+                <Text style={styles.etaValue}>{t('eta_typical_range')}</Text>
               </View>
             </View>
           )}
@@ -228,6 +232,10 @@ export default function TrackingScreen() {
                         {step.label}
                       </Text>
                       <Text style={styles.statusLabelMM}>{step.labelMM}</Text>
+                      {/* vC13: show the honest range hint on the current stage */}
+                      {isCurrent && (
+                        <Text style={styles.stageHint}>{step.hint}</Text>
+                      )}
                     </View>
                   </View>
                 );
@@ -235,27 +243,9 @@ export default function TrackingScreen() {
             </View>
           )}
 
-          {activeOrder.agent && (
-            <View style={styles.agentCard}>
-              <Text style={styles.sectionTitle}>{t('delivery_agent')}</Text>
-              <View style={styles.agentInfo}>
-                <View style={styles.agentAvatar}>
-                  <User size={24} color={Colors.primary} />
-                </View>
-                <View style={styles.agentDetails}>
-                  <Text style={styles.agentName}>{activeOrder.agent.name}</Text>
-                  <Text style={styles.agentPhone}>{activeOrder.agent.phone}</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.callButton}
-                  onPress={handleCallAgent}
-                  activeOpacity={0.7}
-                >
-                  <Phone size={20} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+          {/* vC13: agent card removed — keyed off ghost columns (assigned_agent_id,
+              agent_name/phone) that don't exist on orders. Live agent display +
+              call arrives with Lane 2 item 5 (realtime tracking). */}
 
           <View style={styles.addressCard}>
             <Text style={styles.sectionTitle}>{t('delivery_address')}</Text>
@@ -431,48 +421,14 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     marginTop: 1,
   },
-  agentCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 18,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  agentInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  agentAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  agentDetails: {
-    flex: 1,
-  },
-  agentName: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-    color: Colors.textPrimary,
-  },
-  agentPhone: {
-    fontSize: 13,
+  // vC13: honest stage-based hint shown under the current stage label
+  stageHint: {
+    fontSize: 12,
     color: Colors.textSecondary,
-    marginTop: 2,
+    marginTop: 4,
+    fontStyle: 'italic' as const,
   },
-  callButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.success,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  // vC13: agent card styles removed (dead agent card keyed off ghost columns)
   addressCard: {
     backgroundColor: Colors.surface,
     borderRadius: 18,

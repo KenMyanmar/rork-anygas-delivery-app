@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { Order, DeliveryAgent } from '@/types';
+import { Order } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
+import { fetchCatalog, displayBrandName } from '@/lib/catalog';
 
 const ORDERS_KEY = 'anygas_orders';
 
@@ -26,11 +27,15 @@ interface EdgeFunctionOrderPayload {
   payment_method: string;
 }
 
+// vC13 truth pass: only columns verified to exist on the orders table remain.
+// 13 ghost columns removed — assigned_agent_id, agent_name/phone/lat/lng,
+// rating, rating_comment, estimated_delivery, brand_name (dead — 0% filled,
+// EF write is Lane 2), cylinder_display_name (same), delivery_address_id,
+// delivery_latitude/longitude (no such columns; address lives in orders.address).
 interface SupabaseOrderRow {
   id: string;
   customer_id: string;
   brand_id: string;
-  brand_name?: string;
   cylinder_size: number;
   cylinder_type_id: string | null;
   order_type: string;
@@ -38,47 +43,42 @@ interface SupabaseOrderRow {
   gas_subtotal: number;
   cylinder_subtotal: number;
   delivery_fee: number;
-  // vC12 #3: `orders.address` (text, NOT NULL) is the only address column on the
-  // orders table. `delivery_address_text` does not exist in prod schema — it was a
-  // ghost read that blanked the address on every order card. lat/lng/id below are
-  // not part of the approved #3 fix; they default harmlessly when absent.
-  delivery_address_id: string | null;
-  delivery_latitude: number | null;
-  delivery_longitude: number | null;
+  // vC12 #3: orders.address (text, NOT NULL) is the only address column.
   address: string;
   payment_method: string;
   status: string;
-  assigned_agent_id: string | null;
-  // supplier_id — present on the orders table. When NOT NULL, a supplier has been
-  // assigned (tracker Step 2). Distinct from assigned_agent_id which is the delivery agent.
+  // supplier_id IS NOT NULL → tracker Step 2. Verified column, verified reachable
+  // through select('*') under the orders_select_own_customer RLS policy.
   supplier_id: string | null;
-  agent_name: string | null;
-  agent_phone: string | null;
-  agent_latitude: number | null;
-  agent_longitude: number | null;
-  rating: number | null;
-  rating_comment: string | null;
-  estimated_delivery: string | null;
   created_at: string;
   updated_at: string;
 }
 
-function mapSupabaseOrderToOrder(o: SupabaseOrderRow): Order {
-  const agent: DeliveryAgent | undefined = o.assigned_agent_id
-    ? {
-        id: o.assigned_agent_id,
-        name: o.agent_name || 'Agent',
-        phone: o.agent_phone || '',
-        latitude: o.agent_latitude || 0,
-        longitude: o.agent_longitude || 0,
-      }
-    : undefined;
+// vC13: brand name hydration. orders.brand_name is a real column but 0% filled
+// in prod (the EF doesn't write it yet — Lane 2 item 2). Until then, we look up
+// the display name from the catalog-list cache so order cards show "Parami",
+// "Easy", "Any Brands" etc. instead of blank. Falls back gracefully.
+const BRAND_NAME_CACHE = new Map<string, string>();
 
+async function hydrateBrandNameCache(): Promise<void> {
+  if (BRAND_NAME_CACHE.size > 0) return;
+  try {
+    const catalog = await fetchCatalog();
+    for (const entry of catalog) {
+      BRAND_NAME_CACHE.set(entry.brand.id, displayBrandName(entry.brand.name));
+    }
+  } catch (e) {
+    console.log('[Orders] Brand name hydration failed:', e);
+  }
+}
+
+function mapSupabaseOrderToOrder(o: SupabaseOrderRow): Order {
   return {
     id: o.id,
     userId: o.customer_id,
     brandId: o.brand_id,
-    brandName: o.brand_name,
+    // Hydrated from catalog cache (orders.brand_name is 0% filled in prod).
+    brandName: BRAND_NAME_CACHE.get(o.brand_id) || undefined,
     cylinderSize: o.cylinder_size,
     cylinderTypeId: o.cylinder_type_id ?? undefined,
     orderType: o.order_type as Order['orderType'],
@@ -89,25 +89,20 @@ function mapSupabaseOrderToOrder(o: SupabaseOrderRow): Order {
       total: o.total_amount || 0,
     },
     address: {
-      id: o.delivery_address_id || '',
+      id: '',
       label: '',
-      // vC12 #3: read from the real `orders.address` column (text, NOT NULL).
+      // vC12 #3: read from the real orders.address column (text, NOT NULL).
       address: o.address || '',
-      latitude: o.delivery_latitude || 0,
-      longitude: o.delivery_longitude || 0,
+      latitude: 0,
+      longitude: 0,
       isDefault: false,
     },
     paymentMethod: o.payment_method as Order['paymentMethod'],
     status: o.status as Order['status'],
     // supplier_id IS NOT NULL → supplier assigned (Step 2 of 4-stage tracker).
-    // Falls back to assigned_agent_id for resilience if the column isn't joined.
-    supplierAssigned: !!(o.supplier_id || o.assigned_agent_id),
-    agent,
-    rating: o.rating ?? undefined,
-    ratingComment: o.rating_comment ?? undefined,
+    supplierAssigned: !!o.supplier_id,
     createdAt: o.created_at,
     updatedAt: o.updated_at,
-    estimatedDelivery: o.estimated_delivery ?? undefined,
   };
 }
 
@@ -136,6 +131,9 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
       }
 
       if (data) {
+        // vC13: hydrate brand name cache before mapping so order cards show
+        // the display name (orders.brand_name is 0% filled in prod).
+        await hydrateBrandNameCache();
         const mapped: Order[] = (data as SupabaseOrderRow[]).map(mapSupabaseOrderToOrder);
         console.log('[Orders] Fetched orders from Supabase:', mapped.length);
         await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(mapped));
@@ -238,7 +236,8 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
       status: createdOrder.status || 'new',
       createdAt: createdOrder.created_at || new Date().toISOString(),
       updatedAt: createdOrder.updated_at || new Date().toISOString(),
-      estimatedDelivery: createdOrder.estimated_delivery || '45 min',
+      // vC13: no estimatedDelivery — no eta column exists on orders (bounded-
+      // negative). The tracker shows honest stage-based ranges instead.
     };
 
     setOrders(prev => [newOrder, ...prev]);
@@ -248,22 +247,11 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     return newOrder;
   }, [customerId, session, queryClient]);
 
-  const updateOrderStatus = useCallback((orderId: string, status: Order['status']) => {
-    console.log('[Orders] Updating order status:', orderId, '->', status);
-    setOrders(prev => {
-      const updated = prev.map(o =>
-        o.id === orderId ? { ...o, status, updatedAt: new Date().toISOString() } : o
-      );
-      AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
-      return updated;
-    });
-
-    if (customerId) {
-      supabase
-        .fromUpdate('orders', { status, updated_at: new Date().toISOString() })
-        .eq('id', orderId);
-    }
-  }, [customerId]);
+  // vC13: updateOrderStatus deleted. RLS-proven: there is no customer UPDATE
+  // policy on orders (orders_select_own_customer is SELECT-only). The previous
+  // implementation fired a fromUpdate('orders', { status }) that silently bounced
+  // on every call. Customer-side status changes are not permitted by design —
+  // status transitions are owned by the agent/CRM flows. The client reads only.
 
   // vC12 #2: UI-only, local pending state. The previous implementation wrote to
   // `orders.rating` / `orders.rating_comment` — columns that do NOT exist in prod
@@ -305,7 +293,6 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     activeOrderId,
     setActiveOrderId,
     placeOrder,
-    updateOrderStatus,
     rateOrder,
     getLastOrder,
     getActiveOrder,

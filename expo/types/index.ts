@@ -57,7 +57,10 @@ export interface CylinderOption {
   imageUrl: string | null;
 }
 
-export type OrderType = 'refill' | 'new_setup' | 'exchange' | 'service_call';
+// vC13: 2-SKU surface — Exchange & Service Call removed from the customer app.
+// They remain hotline/CRM operations (34 + 62 orders ever, 100% hotline).
+// The EF still accepts them, but the customer UI no longer offers them.
+export type OrderType = 'refill' | 'new_setup';
 
 export interface OrderTypeOption {
   id: OrderType;
@@ -85,13 +88,10 @@ export interface PricingBreakdown {
 
 export type OrderStatus = 'new' | 'confirmed' | 'in_progress' | 'dispatched' | 'delivered' | 'cancelled' | 'failed';
 
-export interface DeliveryAgent {
-  id: string;
-  name: string;
-  phone: string;
-  latitude: number;
-  longitude: number;
-}
+// vC13 truth pass: DeliveryAgent removed — the agent card was keyed off ghost
+// columns (assigned_agent_id / agent_name / agent_phone / agent_latitude /
+// agent_longitude) that don't exist on the orders table. The dead agent card
+// is gone; live tracking/agent display arrives with Lane 2 item 5.
 
 export interface Order {
   id: string;
@@ -105,16 +105,18 @@ export interface Order {
   address: SavedAddress;
   paymentMethod: PaymentMethod;
   status: OrderStatus;
-  agent?: DeliveryAgent;
   /** True when a supplier/delivery agent has been assigned (supplier_id IS NOT NULL).
    *  Distinct from status — an order can be status='new' yet already assigned, or
    *  status='in_progress' (on the way). The 4-stage tracker reads this for Step 2. */
   supplierAssigned?: boolean;
+  // vC12 #2: rating is UI-only/local pending the A2 Grand Plan (order_ratings).
   rating?: number;
   ratingComment?: string;
   createdAt: string;
   updatedAt: string;
-  estimatedDelivery?: string;
+  // vC13: estimatedDelivery removed — no eta column exists on orders (bounded-
+  // negative). The tracker now shows honest stage-based ranges instead of a
+  // fabricated "45 min" string. Real ETA arrives with Lane 2 item 5.
 }
 
 export interface Notification {

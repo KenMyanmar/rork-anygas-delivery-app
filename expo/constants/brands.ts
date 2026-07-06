@@ -1,5 +1,9 @@
 import { OrderTypeOption, PaymentOption } from '@/types';
 
+// vC13: 2-SKU surface — Refill + New Setup only. Matches the Mini App exactly
+// (HomePage orderTab refill/new + allow_new_setup brand filter). Exchange &
+// Service Call are removed from the customer surface — 34 + 62 orders ever,
+// 100% hotline. They remain in the EF contract for CRM/hotline operations.
 export const ORDER_TYPES: OrderTypeOption[] = [
   {
     id: 'refill',
@@ -14,20 +18,6 @@ export const ORDER_TYPES: OrderTypeOption[] = [
     labelMM: 'အသစ်တပ်ဆင်',
     description: 'Get a brand new cylinder + regulator',
     descriptionMM: 'ဆလင်ဒါအသစ် + ရီဂူလေတာ ရယူပါ',
-  },
-  {
-    id: 'exchange',
-    label: 'Exchange',
-    labelMM: 'လဲလှယ်',
-    description: 'Swap your empty cylinder for a full one',
-    descriptionMM: 'ဗလာဆလင်ဒါကို အပြည့်နဲ့ လဲလှယ်ပါ',
-  },
-  {
-    id: 'service_call',
-    label: 'Service Call',
-    labelMM: 'ဝန်ဆောင်မှုခေါ်ဆို',
-    description: 'Request a technician visit (no delivery fee)',
-    descriptionMM: 'နည်းပညာရှင် ခေါ်ဆို (မပို့ဆောင်ခ မရှိ)',
   },
 ];
 

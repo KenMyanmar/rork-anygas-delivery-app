@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -14,6 +15,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import {
   X,
   ChevronLeft,
+  ChevronDown,
   Check,
   Package,
   Ruler,
@@ -33,6 +35,7 @@ import { useQuery } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useOrders } from '@/providers/OrderProvider';
+import { YANGON_TOWNSHIPS } from '@/constants/townships';
 import { Alert } from 'react-native';
 import { ORDER_TYPES, PAYMENT_OPTIONS } from '@/constants/brands';
 import {
@@ -84,7 +87,8 @@ function getBrandColor(name: string): string {
 }
 
 // Server v45 contract: refill = 6000 for Other Partners (brand 62a6da96...), 3000 for all others;
-// new_setup / exchange / service_call = 0. Server recomputes and rejects >1% client mismatch (409).
+// new_setup = 0. Server recomputes and rejects >1% client mismatch (409).
+// vC13: exchange/service_call removed from the customer surface (2-SKU).
 // Brand identified by name ('Other Partners') since the full UUID isn't in the client repo.
 // Fallback only — the catalog-list edge function supplies refill_delivery_fee per brand,
 // so the live DB value is authoritative. These are safety nets if a brand row is missing the column.
@@ -112,7 +116,7 @@ export default function OrderScreen() {
     reorderSize?: string;
     reorderType?: string;
   }>();
-  const { savedAddresses, getDefaultAddress, customerId, activeCustomer } = useAuth();
+  const { savedAddresses, getDefaultAddress, customerId, activeCustomer, updateCustomerAddress } = useAuth();
   const { placeOrder } = useOrders();
   const { t, tMM, language, isMM } = useI18n();
 
@@ -124,12 +128,17 @@ export default function OrderScreen() {
   const [selectedType, setSelectedType] = useState<OrderType | null>(
     (params.reorderType as OrderType) || null
   );
-  const customerHasAddress = !!(activeCustomer?.address && activeCustomer?.township);
+  // vC13 Task B: address gate — checks activeCustomer.address only (orders.address
+  // is NOT NULL; create-customer-order inserts customer.address → NULL crashes 500).
+  // 80% of app-linked customers have no address. The gate prompts before checkout.
+  const customerHasAddress = !!activeCustomer?.address;
   const customerAddress: SavedAddress | null = customerHasAddress
     ? {
         id: 'customer_default',
-        label: activeCustomer!.township!,
-        address: `${activeCustomer!.address}, ${activeCustomer!.township}`,
+        label: activeCustomer?.township || 'Township',
+        address: activeCustomer?.township
+          ? `${activeCustomer.address}, ${activeCustomer.township}`
+          : activeCustomer.address!,
         latitude: 0,
         longitude: 0,
         isDefault: true,
@@ -140,6 +149,13 @@ export default function OrderScreen() {
     customerAddress || getDefaultAddress()
   );
   const [showAddressStep, setShowAddressStep] = useState<boolean>(false);
+  // vC13 Task B: address gate form state. The form doubles as add + edit.
+  const [editingAddress, setEditingAddress] = useState<boolean>(!customerHasAddress);
+  const [pendingAddress, setPendingAddress] = useState<string>(activeCustomer?.address || '');
+  const [pendingTownship, setPendingTownship] = useState<string>(activeCustomer?.township || '');
+  const [addressSaveError, setAddressSaveError] = useState<string | null>(null);
+  const [isSavingAddress, setIsSavingAddress] = useState<boolean>(false);
+  const [townshipPickerOpen, setTownshipPickerOpen] = useState<boolean>(false);
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod | null>(null);
   const [quantity] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -204,7 +220,10 @@ export default function OrderScreen() {
     return brand;
   }, [brands, selectedBrandId]);
 
-  const steps = (customerHasAddress && !showAddressStep) ? STEPS_WITHOUT_ADDRESS : STEPS_WITH_ADDRESS;
+  // vC13 Task B: show address step when customer has no address (gate), when user
+  // tapped Change (showAddressStep), or when editing the address.
+  const needsAddressStep = !customerHasAddress || showAddressStep || editingAddress;
+  const steps = needsAddressStep ? STEPS_WITH_ADDRESS : STEPS_WITHOUT_ADDRESS;
   const currentStepIndex = steps.indexOf(currentStep);
   const progress = (currentStepIndex + 1) / steps.length;
 
@@ -225,9 +244,17 @@ export default function OrderScreen() {
   }, [currentStep, animateTransition, steps]);
 
   const goBack = useCallback(() => {
-    if (currentStep === 'address' && showAddressStep && customerHasAddress) {
+    if (currentStep === 'address' && customerHasAddress && !editingAddress) {
       setShowAddressStep(false);
+      setEditingAddress(false);
       setCurrentStep('pricing');
+      animateTransition();
+      return;
+    }
+    if (currentStep === 'address' && editingAddress && customerHasAddress) {
+      // Was editing an existing address — go back to address display, not the form.
+      setEditingAddress(false);
+      setAddressSaveError(null);
       animateTransition();
       return;
     }
@@ -238,7 +265,7 @@ export default function OrderScreen() {
     } else {
       router.back();
     }
-  }, [currentStep, animateTransition, steps, showAddressStep, customerHasAddress]);
+  }, [currentStep, animateTransition, steps, showAddressStep, customerHasAddress, editingAddress]);
 
   const calculatePricing = useCallback((): PricingBreakdown => {
     if (!selectedCylinder || !selectedType) {
@@ -262,9 +289,9 @@ export default function OrderScreen() {
     } else if (selectedType === 'new_setup') {
       cylinderPrice = selectedCylinder.cylinderPrice * quantity;
       deliveryFee = 0;
-    } else if (selectedType === 'exchange' || selectedType === 'service_call') {
-      deliveryFee = 0;
     }
+    // vC13: exchange/service_call removed from the customer surface (2-SKU).
+    // They remain in the EF contract for hotline/CRM operations.
 
     const total = gasPrice + cylinderPrice + deliveryFee;
     return { gasPrice, cylinderPrice, deliveryFee, total };
@@ -448,17 +475,11 @@ export default function OrderScreen() {
                   return null;
                 }
                 const label = type.id === 'refill' ? t('type_refill')
-                  : type.id === 'new_setup' ? t('type_new_setup')
-                  : type.id === 'exchange' ? t('type_exchange')
-                  : t('type_service_call');
+                  : t('type_new_setup');
                 const labelMM = type.id === 'refill' ? tMM('type_refill')
-                  : type.id === 'new_setup' ? tMM('type_new_setup')
-                  : type.id === 'exchange' ? tMM('type_exchange')
-                  : tMM('type_service_call');
+                  : tMM('type_new_setup');
                 const desc = type.id === 'refill' ? t('type_refill_desc')
-                  : type.id === 'new_setup' ? t('type_new_setup_desc')
-                  : type.id === 'exchange' ? t('type_exchange_desc')
-                  : t('type_service_call_desc');
+                  : t('type_new_setup_desc');
                 return (
                   <TouchableOpacity
                     key={type.id}
@@ -530,7 +551,7 @@ export default function OrderScreen() {
               )}
               <View style={styles.pricingRow}>
                 <Text style={styles.pricingLabel}>
-                  {selectedType === 'service_call' ? t('service_fee') : selectedType === 'exchange' ? t('exchange_fee') : t('delivery_fee')}
+                  {t('delivery_fee')}
                 </Text>
                 <Text style={styles.pricingValue}>{formatPrice(pricing.deliveryFee)} MMK</Text>
               </View>
@@ -544,34 +565,125 @@ export default function OrderScreen() {
         );
 
       case 'address':
-        return (
-          <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>{t('delivery_address')}</Text>
-            <Text style={styles.stepTitleMM}>{tMM('delivery_address')}</Text>
-            <View style={styles.addressList}>
-              {savedAddresses.map((addr) => (
+        // vC13 Task B: address gate. Two modes:
+        // 1) No address yet → show add form (gate, blocks checkout until saved).
+        // 2) Has address but user tapped Change → show existing + edit button.
+        if (customerHasAddress && !editingAddress) {
+          return (
+            <View style={styles.stepContent}>
+              <Text style={styles.stepTitle}>{t('delivery_address')}</Text>
+              <Text style={styles.stepTitleMM}>{tMM('delivery_address')}</Text>
+              {customerAddress && (
                 <TouchableOpacity
-                  key={addr.id}
-                  style={[
-                    styles.addressOption,
-                    selectedAddress?.id === addr.id && styles.addressOptionSelected,
-                  ]}
-                  onPress={() => setSelectedAddress(addr)}
+                  style={[styles.addressOption, styles.addressOptionSelected]}
+                  onPress={() => setSelectedAddress(customerAddress)}
                   activeOpacity={0.7}
                 >
-                  <MapPin size={20} color={selectedAddress?.id === addr.id ? Colors.primary : Colors.textTertiary} />
+                  <MapPin size={20} color={Colors.primary} />
                   <View style={styles.addressOptionContent}>
-                    <Text style={[styles.addressOptionLabel, selectedAddress?.id === addr.id && styles.addressOptionLabelSelected]}>
-                      {addr.label}
+                    <Text style={[styles.addressOptionLabel, styles.addressOptionLabelSelected]}>
+                      {customerAddress.label}
                     </Text>
-                    <Text style={styles.addressOptionText} numberOfLines={2}>{addr.address}</Text>
+                    <Text style={styles.addressOptionText} numberOfLines={2}>{customerAddress.address}</Text>
                   </View>
-                  {selectedAddress?.id === addr.id && (
-                    <Check size={18} color={Colors.primary} />
-                  )}
+                  <Check size={18} color={Colors.primary} />
                 </TouchableOpacity>
-              ))}
+              )}
+              <TouchableOpacity
+                style={styles.editAddressBtn}
+                onPress={() => {
+                  setPendingAddress(activeCustomer?.address || '');
+                  setPendingTownship(activeCustomer?.township || '');
+                  setEditingAddress(true);
+                  setAddressSaveError(null);
+                  animateTransition();
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.editAddressBtnText}>{t('change')}</Text>
+              </TouchableOpacity>
             </View>
+          );
+        }
+        // Address form (add or edit) — the gate that blocks checkout.
+        return (
+          <View style={styles.stepContent}>
+            <Text style={styles.stepTitle}>
+              {customerHasAddress ? t('edit_delivery_address') : t('add_delivery_address')}
+            </Text>
+            <Text style={styles.stepTitleMM}>
+              {customerHasAddress ? tMM('edit_delivery_address') : tMM('add_delivery_address')}
+            </Text>
+
+            <View style={styles.addressFormGroup}>
+              <Text style={styles.addressFormLabel}>{t('address_label')}</Text>
+              <TextInput
+                style={[styles.addressFormInput, styles.addressFormTextArea]}
+                placeholder={t('address_placeholder')}
+                placeholderTextColor={Colors.textTertiary}
+                value={pendingAddress}
+                onChangeText={setPendingAddress}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                testID="gate-address-input"
+              />
+            </View>
+
+            <View style={styles.addressFormGroup}>
+              <Text style={styles.addressFormLabel}>{t('select_township')}</Text>
+              <TouchableOpacity
+                style={styles.townshipPicker}
+                onPress={() => setTownshipPickerOpen(!townshipPickerOpen)}
+                activeOpacity={0.7}
+                testID="gate-township-picker"
+              >
+                <Text
+                  style={[
+                    styles.townshipPickerText,
+                    !pendingTownship && styles.townshipPickerPlaceholder,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {pendingTownship || t('select_township')}
+                </Text>
+                <ChevronDown size={18} color={Colors.textTertiary} />
+              </TouchableOpacity>
+              {townshipPickerOpen && (
+                <ScrollView style={styles.townshipList} nestedScrollEnabled>
+                  {YANGON_TOWNSHIPS.map((tw) => (
+                    <TouchableOpacity
+                      key={tw}
+                      style={[
+                        styles.townshipItem,
+                        pendingTownship === tw && styles.townshipItemSelected,
+                      ]}
+                      onPress={() => {
+                        setPendingTownship(tw);
+                        setTownshipPickerOpen(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.townshipItemText,
+                          pendingTownship === tw && styles.townshipItemTextSelected,
+                        ]}
+                      >
+                        {tw}
+                      </Text>
+                      {pendingTownship === tw && <Check size={16} color={Colors.primary} />}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+
+            {addressSaveError && (
+              <View style={styles.addressErrorBox}>
+                <Text style={styles.addressErrorText}>{addressSaveError}</Text>
+              </View>
+            )}
           </View>
         );
 
@@ -666,9 +778,7 @@ export default function OrderScreen() {
                   {(() => {
                     const id = selectedType;
                     const label = id === 'refill' ? t('type_refill')
-                      : id === 'new_setup' ? t('type_new_setup')
-                      : id === 'exchange' ? t('type_exchange')
-                      : t('type_service_call');
+                      : t('type_new_setup');
                     return label;
                   })()}
                 </Text>
@@ -700,13 +810,58 @@ export default function OrderScreen() {
     }
   };
 
+  // vC13 Task B: save address to customers row (address + township only).
+  // Visible error handling — no swallowed errors (rating bug, accept bug pattern).
+  const handleSaveAddress = useCallback(async (): Promise<boolean> => {
+    const trimmedAddress = pendingAddress.trim();
+    const trimmedTownship = pendingTownship.trim();
+    if (!trimmedAddress || !trimmedTownship) {
+      setAddressSaveError(isMM ? 'လိပ်စာနှင့် မြို့နယ် ထည့်ပါ' : 'Please fill in address and township');
+      return false;
+    }
+    setIsSavingAddress(true);
+    setAddressSaveError(null);
+    try {
+      await updateCustomerAddress(trimmedAddress, trimmedTownship);
+      const newAddr: SavedAddress = {
+        id: 'customer_default',
+        label: trimmedTownship,
+        address: `${trimmedAddress}, ${trimmedTownship}`,
+        latitude: 0,
+        longitude: 0,
+        isDefault: true,
+      };
+      setSelectedAddress(newAddr);
+      setEditingAddress(false);
+      setShowAddressStep(false);
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      return true;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : (isMM ? 'လိပ်စာ သိမ်းဆည်၍ မရပါ' : 'Failed to save address');
+      console.log('[Order] Address save error:', msg);
+      setAddressSaveError(msg);
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      return false;
+    } finally {
+      setIsSavingAddress(false);
+    }
+  }, [pendingAddress, pendingTownship, updateCustomerAddress, isMM]);
+
   const canProceed = () => {
     switch (currentStep) {
       case 'brand': return !!selectedBrandId;
       case 'size': return !!selectedCylinder;
       case 'type': return !!selectedType;
       case 'pricing': return true;
-      case 'address': return !!selectedAddress;
+      case 'address':
+        // Address gate: if editing (or no address), the Save button drives proceed.
+        // If showing existing address, allow proceed.
+        if (editingAddress || !customerHasAddress) return false;
+        return !!selectedAddress;
       case 'payment': return !!selectedPayment;
       case 'confirm': return true;
       default: return false;
@@ -750,7 +905,23 @@ export default function OrderScreen() {
         </ScrollView>
 
         <View style={styles.bottomBar}>
-          {currentStep === 'confirm' ? (
+          {currentStep === 'address' && (editingAddress || !customerHasAddress) ? (
+            // vC13 Task B: address gate — Save button drives the form submit.
+            // Blocks checkout until a valid address is saved. Visible error on fail.
+            <TouchableOpacity
+              style={[styles.nextButton, isSavingAddress && styles.buttonDisabled]}
+              onPress={handleSaveAddress}
+              disabled={isSavingAddress}
+              activeOpacity={0.85}
+              testID="save-address-button"
+            >
+              {isSavingAddress ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.nextButtonText}>{t('save_and_continue')}</Text>
+              )}
+            </TouchableOpacity>
+          ) : currentStep === 'confirm' ? (
             <TouchableOpacity
               style={[styles.confirmButton, isSubmitting && styles.buttonDisabled]}
               onPress={handleConfirmOrder}
@@ -1296,5 +1467,103 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#BBF7D0',
     gap: 10,
+  },
+  // vC13 Task B: address gate form styles
+  editAddressBtn: {
+    alignSelf: 'flex-start' as const,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    backgroundColor: Colors.primaryLight,
+    marginTop: 16,
+  },
+  editAddressBtnText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  addressFormGroup: {
+    marginBottom: 20,
+  },
+  addressFormLabel: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.textPrimary,
+    marginBottom: 8,
+  },
+  addressFormInput: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: Colors.textPrimary,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  addressFormTextArea: {
+    minHeight: 80,
+    paddingTop: 14,
+    textAlignVertical: 'top' as const,
+  },
+  townshipPicker: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  townshipPickerText: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.textPrimary,
+  },
+  townshipPickerPlaceholder: {
+    color: Colors.textTertiary,
+  },
+  townshipList: {
+    maxHeight: 220,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    marginTop: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.borderLight,
+  },
+  townshipItem: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  townshipItemSelected: {
+    backgroundColor: Colors.primaryLight,
+  },
+  townshipItemText: {
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+  townshipItemTextSelected: {
+    color: Colors.primary,
+    fontWeight: '700' as const,
+  },
+  addressErrorBox: {
+    backgroundColor: Colors.errorLight,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: Colors.error,
+  },
+  addressErrorText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.error,
   },
 });
