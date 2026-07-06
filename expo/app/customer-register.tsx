@@ -1,3 +1,10 @@
+/**
+ * vC16 Task B — Registration screen with canon township picker + landmark.
+ *
+ * Collects the same 3 fields as the address form (address, township, landmark)
+ * using the same components (canon township picker, landmark optional) so the
+ * form is identical everywhere.
+ */
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -13,17 +20,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Flame, UserPlus, ArrowRight } from 'lucide-react-native';
+import { Flame, UserPlus, ArrowRight, ChevronDown, Check } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
+import { useI18n } from '@/providers/I18nProvider';
+import { YANGON_TOWNSHIPS } from '@/constants/townships';
 
 export default function CustomerRegisterScreen() {
   const { registerNewCustomer, phoneNumber } = useAuth();
+  const { t } = useI18n();
   const [name, setName] = useState<string>('');
   const [township, setTownship] = useState<string>('');
+  const [townshipPickerOpen, setTownshipPickerOpen] = useState<boolean>(false);
   const [address, setAddress] = useState<string>('');
+  const [landmark, setLandmark] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const formattedPhone = phoneNumber
@@ -32,7 +44,7 @@ export default function CustomerRegisterScreen() {
         : phoneNumber.startsWith('0') ? phoneNumber : '0' + phoneNumber)
     : '';
 
-  const isValid = name.trim().length >= 2 && address.trim().length >= 5;
+  const isValid = name.trim().length >= 2 && address.trim().length >= 5 && township.trim().length >= 2;
 
   const handleSubmit = useCallback(async () => {
     if (!isValid) return;
@@ -47,6 +59,7 @@ export default function CustomerRegisterScreen() {
         phone: formattedPhone || phoneNumber,
         township: township.trim(),
         address: address.trim(),
+        landmark: landmark.trim() || null,
       });
       console.log('[CustomerRegister] Customer registered, navigating home');
       if (Platform.OS !== 'web') {
@@ -60,7 +73,7 @@ export default function CustomerRegisterScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [isValid, name, formattedPhone, phoneNumber, township, address, registerNewCustomer]);
+  }, [isValid, name, formattedPhone, phoneNumber, township, address, landmark, registerNewCustomer]);
 
   return (
     <View style={styles.container}>
@@ -109,23 +122,61 @@ export default function CustomerRegisterScreen() {
             <Text style={styles.hintText}>Auto-filled from your login phone</Text>
           </View>
 
+          {/* vC16 Task B: canon township picker (replaces free-text input) */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Township / မြို့နယ်</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Hlaing, Insein, Bahan"
-              placeholderTextColor={Colors.textTertiary}
-              value={township}
-              onChangeText={setTownship}
-              testID="register-township"
-            />
+            <Text style={styles.label}>{t('select_township')}</Text>
+            <TouchableOpacity
+              style={styles.picker}
+              onPress={() => setTownshipPickerOpen(!townshipPickerOpen)}
+              activeOpacity={0.7}
+              testID="register-township-picker"
+            >
+              <Text
+                style={[styles.pickerText, !township && styles.pickerPlaceholder]}
+                numberOfLines={1}
+              >
+                {township || t('select_township')}
+              </Text>
+              <ChevronDown size={18} color={Colors.textTertiary} />
+            </TouchableOpacity>
+            {townshipPickerOpen && (
+              <ScrollView style={styles.townshipList} nestedScrollEnabled>
+                {YANGON_TOWNSHIPS.map((tw) => (
+                  <TouchableOpacity
+                    key={tw}
+                    style={[
+                      styles.townshipItem,
+                      township === tw && styles.townshipItemSelected,
+                    ]}
+                    onPress={() => {
+                      setTownship(tw);
+                      setTownshipPickerOpen(false);
+                      if (Platform.OS !== 'web') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.townshipItemText,
+                        township === tw && styles.townshipItemTextSelected,
+                      ]}
+                    >
+                      {tw}
+                    </Text>
+                    {township === tw && <Check size={16} color={Colors.primary} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Address / လိပ်စာ</Text>
+            <Text style={styles.label}>{t('address_label')}</Text>
             <TextInput
               style={[styles.input, styles.addressInput]}
-              placeholder="Building name, street, floor, room number"
+              placeholder={t('address_placeholder')}
               placeholderTextColor={Colors.textTertiary}
               value={address}
               onChangeText={setAddress}
@@ -133,6 +184,20 @@ export default function CustomerRegisterScreen() {
               numberOfLines={3}
               textAlignVertical="top"
               testID="register-address"
+            />
+          </View>
+
+          {/* vC16 Task B: landmark field (optional, same as address form) */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>{t('landmark_label')}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={t('landmark_placeholder')}
+              placeholderTextColor={Colors.textTertiary}
+              value={landmark}
+              onChangeText={setLandmark}
+              maxLength={100}
+              testID="register-landmark"
             />
           </View>
 
@@ -251,6 +316,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textTertiary,
     marginTop: 4,
+  },
+  // vC16 Task B: canon township picker
+  picker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.background,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  pickerText: {
+    fontSize: 16,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  pickerPlaceholder: {
+    color: Colors.textTertiary,
+  },
+  townshipList: {
+    marginTop: 8,
+    maxHeight: 220,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  townshipItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  townshipItemSelected: {
+    backgroundColor: Colors.primaryLight,
+  },
+  townshipItemText: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+  },
+  townshipItemTextSelected: {
+    color: Colors.primary,
+    fontWeight: '700' as const,
   },
   submitButton: {
     flexDirection: 'row',

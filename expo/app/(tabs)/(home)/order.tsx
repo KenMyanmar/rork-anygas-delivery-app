@@ -28,6 +28,8 @@ import {
   Wifi,
   Flame,
   Cylinder,
+  Crosshair,
+  Navigation,
 } from 'lucide-react-native';
 import { Image } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -37,6 +39,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useOrders } from '@/providers/OrderProvider';
 import { YANGON_TOWNSHIPS } from '@/constants/townships';
 import { Alert } from 'react-native';
+import * as Location from 'expo-location';
 import { ORDER_TYPES, PAYMENT_OPTIONS } from '@/constants/brands';
 import {
   OrderType,
@@ -153,6 +156,11 @@ export default function OrderScreen() {
   const [editingAddress, setEditingAddress] = useState<boolean>(!customerHasAddress);
   const [pendingAddress, setPendingAddress] = useState<string>(activeCustomer?.address || '');
   const [pendingTownship, setPendingTownship] = useState<string>(activeCustomer?.township || '');
+  // vC16 Task B: landmark + GPS capture in the address gate form
+  const [pendingLandmark, setPendingLandmark] = useState<string>(activeCustomer?.landmark || '');
+  const [pendingGpsLat, setPendingGpsLat] = useState<number | null>(activeCustomer?.gps_lat ?? null);
+  const [pendingGpsLng, setPendingGpsLng] = useState<number | null>(activeCustomer?.gps_lng ?? null);
+  const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'saved' | 'denied'>('idle');
   const [addressSaveError, setAddressSaveError] = useState<string | null>(null);
   const [isSavingAddress, setIsSavingAddress] = useState<boolean>(false);
   const [townshipPickerOpen, setTownshipPickerOpen] = useState<boolean>(false);
@@ -679,6 +687,56 @@ export default function OrderScreen() {
               )}
             </View>
 
+            {/* vC16 Task B: landmark field (optional, critical for Myanmar addressing) */}
+            <View style={styles.addressFormGroup}>
+              <Text style={styles.addressFormLabel}>{t('landmark_label')}</Text>
+              <TextInput
+                style={styles.addressFormInput}
+                placeholder={t('landmark_placeholder')}
+                placeholderTextColor={Colors.textTertiary}
+                value={pendingLandmark}
+                onChangeText={setPendingLandmark}
+                maxLength={100}
+                testID="gate-landmark-input"
+              />
+            </View>
+
+            {/* vC16 Task B: "Use my location" GPS capture (optional, never required) */}
+            <TouchableOpacity
+              style={[
+                styles.locationBtn,
+                locationStatus === 'saved' && styles.locationBtnSaved,
+                locationStatus === 'loading' && styles.locationBtnLoading,
+              ]}
+              onPress={handleUseLocation}
+              disabled={locationStatus === 'loading'}
+              activeOpacity={0.7}
+              testID="gate-use-location"
+            >
+              {locationStatus === 'loading' ? (
+                <ActivityIndicator size="small" color={Colors.primary} />
+              ) : locationStatus === 'saved' ? (
+                <Check size={18} color={Colors.success} />
+              ) : (
+                <Crosshair size={18} color={Colors.primary} />
+              )}
+              <Text
+                style={[
+                  styles.locationBtnText,
+                  locationStatus === 'saved' && styles.locationBtnTextSaved,
+                ]}
+              >
+                {locationStatus === 'loading'
+                  ? t('location_loading')
+                  : locationStatus === 'saved'
+                  ? t('location_saved')
+                  : t('use_my_location')}
+              </Text>
+            </TouchableOpacity>
+            {locationStatus === 'denied' && (
+              <Text style={styles.locationDeniedText}>{t('location_denied')}</Text>
+            )}
+
             {addressSaveError && (
               <View style={styles.addressErrorBox}>
                 <Text style={styles.addressErrorText}>{addressSaveError}</Text>
@@ -810,7 +868,8 @@ export default function OrderScreen() {
     }
   };
 
-  // vC13 Task B: save address to customers row (address + township only).
+  // vC16 Task B: save address + township + landmark + GPS to customers row.
+  // Column allowlist: address, township, landmark, gps_lat, gps_lng.
   // Visible error handling — no swallowed errors (rating bug, accept bug pattern).
   const handleSaveAddress = useCallback(async (): Promise<boolean> => {
     const trimmedAddress = pendingAddress.trim();
@@ -822,7 +881,13 @@ export default function OrderScreen() {
     setIsSavingAddress(true);
     setAddressSaveError(null);
     try {
-      await updateCustomerAddress(trimmedAddress, trimmedTownship);
+      await updateCustomerAddress(
+        trimmedAddress,
+        trimmedTownship,
+        pendingLandmark.trim() || null,
+        pendingGpsLat,
+        pendingGpsLng,
+      );
       const newAddr: SavedAddress = {
         id: 'customer_default',
         label: trimmedTownship,
@@ -849,7 +914,38 @@ export default function OrderScreen() {
     } finally {
       setIsSavingAddress(false);
     }
-  }, [pendingAddress, pendingTownship, updateCustomerAddress, isMM]);
+  }, [pendingAddress, pendingTownship, pendingLandmark, pendingGpsLat, pendingGpsLng, updateCustomerAddress, isMM]);
+
+  // vC16 Task B: "Use my location" GPS capture in the address gate form.
+  // Optional, never required. expo-location permission prompt → capture
+  // gps_lat/gps_lng → included in the same customers update.
+  const handleUseLocation = useCallback(async () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setLocationStatus('loading');
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationStatus('denied');
+        console.log('[Order] Location permission denied');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      setPendingGpsLat(pos.coords.latitude);
+      setPendingGpsLng(pos.coords.longitude);
+      setLocationStatus('saved');
+      console.log('[Order] GPS captured:', pos.coords.latitude, pos.coords.longitude);
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (e) {
+      console.log('[Order] Location error:', e);
+      setLocationStatus('denied');
+    }
+  }, []);
 
   const canProceed = () => {
     switch (currentStep) {
@@ -1565,5 +1661,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600' as const,
     color: Colors.error,
+  },
+  // vC16 Task B: location button + GPS capture styles
+  locationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: Colors.primaryLight,
+    borderWidth: 1.5,
+    borderColor: Colors.primaryMuted,
+    marginBottom: 16,
+  },
+  locationBtnSaved: {
+    backgroundColor: Colors.successLight,
+    borderColor: Colors.success,
+  },
+  locationBtnLoading: {
+    opacity: 0.7,
+  },
+  locationBtnText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.primary,
+  },
+  locationBtnTextSaved: {
+    color: Colors.success,
+  },
+  locationDeniedText: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    marginBottom: 16,
+    fontStyle: 'italic' as const,
   },
 });

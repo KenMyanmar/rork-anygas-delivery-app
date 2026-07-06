@@ -431,6 +431,41 @@ class SupabaseRestClient {
       }
     },
 
+    // vC16 Task A: Clear local session WITHOUT revoking the token. Used by
+    // softSignOut — the session moves to SecureStore so PIN can restore it.
+    clearLocalSession: async (): Promise<void> => {
+      currentSession = null;
+      await AsyncStorage.removeItem(SESSION_KEY);
+      notifyListeners('SIGNED_OUT', null);
+      console.log('[Supabase] Local session cleared (not revoked)');
+    },
+
+    // vC16 Task A: Restore a parked session from SecureStore back to the live
+    // session path. Notifies SIGNED_IN so AuthProvider picks it up.
+    resumeSession: async (session: SupabaseSession): Promise<void> => {
+      currentSession = session;
+      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      notifyListeners('SIGNED_IN', session);
+      console.log('[Supabase] Session restored from parked');
+    },
+
+    // vC16 Task A: Revoke a specific token server-side (for clearing a parked
+    // session without affecting the live session path).
+    revokeToken: async (token: string): Promise<void> => {
+      try {
+        await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${token}`,
+          },
+        }).catch(() => {});
+        console.log('[Supabase] Token revoked');
+      } catch (e) {
+        console.log('[Supabase] Revoke token error:', e);
+      }
+    },
+
     onAuthStateChange: (callback: (event: string, session: SupabaseSession | null) => void) => {
       const listener: AuthListener = (event, session) => callback(event, session);
       authListeners.add(listener);

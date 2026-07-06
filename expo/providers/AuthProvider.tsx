@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, SupabaseSession, SupabaseUser } from '@/lib/supabase';
-import { Customer, CustomerLinkingState, SavedAddress } from '@/types';
+import { Customer, CustomerLinkingState, SavedAddress, ParkedAccount } from '@/types';
 import { usePinLock } from '@/providers/PinLockProvider';
 
 const ACTIVE_CUSTOMER_KEY = 'anygas_active_customer';
 const ADDRESSES_KEY = 'anygas_addresses';
 const LAST_PHONE_KEY = 'anygas_last_phone'; // vC15 Task B: welcome-back prefill (display format, not a secret)
+const PARKED_SESSION_KEY = 'anygas_parked_session'; // vC16 Task A: soft sign-out session (SecureStore)
+const PARKED_ACCOUNT_KEY = 'anygas_parked_account'; // vC16 Task A: parked account metadata (SecureStore)
 
 function authPhoneToLocalPhone(authPhone: string): string {
   let cleaned = authPhone.replace(/\s/g, '');
@@ -28,6 +32,10 @@ function authPhoneToLocalPhone(authPhone: string): string {
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { clearPinOnSignOut, recheckPin } = usePinLock();
+  // vC16 Task A: parked account state — when a soft sign-out happens, the
+  // session moves to SecureStore and we track a parked account so the account
+  // tile overlay can show "Continue as 095119900".
+  const [parkedAccount, setParkedAccount] = useState<ParkedAccount | null>(null);
   const [session, setSession] = useState<SupabaseSession | null>(null);
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -48,6 +56,22 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setUser(currentSession?.user ?? null);
       setIsLoading(false);
     });
+
+    // vC16 Task A: check for a parked account (from a previous soft sign-out).
+    // The session is in SecureStore; the account metadata tells us the phone.
+    // We load it so the account tile overlay can render — but we do NOT restore
+    // the session until PIN is entered.
+    if (Platform.OS !== 'web') {
+      SecureStore.getItemAsync(PARKED_ACCOUNT_KEY).then((stored) => {
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored) as ParkedAccount;
+            console.log('[Auth] Found parked account:', parsed.phone);
+            setParkedAccount(parsed);
+          } catch {}
+        }
+      }).catch(() => {});
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
       console.log('[Auth] Auth state changed:', _event);
@@ -149,6 +173,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       secondary_phone: (c.secondary_phone as string | null) ?? null,
       township: (c.township as string | null) ?? null,
       address: (c.address as string | null) ?? null,
+      // vC16 Task B: landmark + GPS for the address experience
+      landmark: (c.landmark as string | null) ?? null,
+      gps_lat: (c.gps_lat as number | null) ?? null,
+      gps_lng: (c.gps_lng as number | null) ?? null,
       auth_user_id: (c.auth_user_id as string | null) ?? null,
       created_at: (c.created_at as string) || '',
       updated_at: (c.updated_at as string) || '',
@@ -253,6 +281,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     phone: string;
     township: string;
     address: string;
+    landmark?: string | null; // vC16 Task B
   }) => {
     if (!user?.id) {
       console.log('[Auth] registerNewCustomer: no auth user');
@@ -270,6 +299,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         full_name: customerData.name,
         township: customerData.township,
         address: customerData.address,
+        // vC16 Task B: pass landmark to the EF (it writes to customers.landmark).
+        // The EF may not accept this yet — it's additive and will be ignored if absent.
+        landmark: customerData.landmark || null,
       },
     });
 
@@ -293,6 +325,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       secondary_phone: (c.secondary_phone as string | null) ?? null,
       township: (c.township as string | null) ?? customerData.township,
       address: (c.address as string | null) ?? customerData.address,
+      // vC16 Task B: landmark + GPS
+      landmark: (c.landmark as string | null) ?? customerData.landmark ?? null,
+      gps_lat: (c.gps_lat as number | null) ?? null,
+      gps_lng: (c.gps_lng as number | null) ?? null,
       auth_user_id: user.id,
       created_at: (c.created_at as string) || new Date().toISOString(),
       updated_at: (c.updated_at as string) || new Date().toISOString(),
@@ -308,18 +344,131 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return newCustomer;
   }, [user?.id, queryClient]);
 
-  const logout = useCallback(async () => {
-    console.log('[Auth] Logging out');
-    // vC15 Task B: persist the phone number (display format) for welcome-back
-    // prefill on the login screen. Not a secret — AsyncStorage is fine here.
+  // vC16 Task A: SOFT sign-out. Moves the session from AsyncStorage to
+  // SecureStore so PIN can restore it without OTP. UI state is cleared (the
+  // app shows the account tile overlay). The token is NOT revoked.
+  const softSignOut = useCallback(async () => {
+    console.log('[Auth] Soft sign-out — parking session');
+    const phoneForPrefill = activeCustomer?.phone || phoneNumber || '';
+    const nameForTile = activeCustomer?.full_name || activeCustomer?.name || null;
+
+    // Read the current session from AsyncStorage before clearing it.
+    let sessionToPark: SupabaseSession | null = null;
+    try {
+      const stored = await AsyncStorage.getItem('anygas_supabase_session');
+      if (stored) {
+        sessionToPark = JSON.parse(stored) as SupabaseSession;
+      }
+    } catch (e) {
+      console.log('[Auth] Failed to read session for parking:', e);
+    }
+
+    if (Platform.OS !== 'web' && sessionToPark) {
+      // Park the session in SecureStore + account metadata.
+      try {
+        await SecureStore.setItemAsync(PARKED_SESSION_KEY, JSON.stringify(sessionToPark));
+        const accountMeta: ParkedAccount = { phone: phoneForPrefill, name: nameForTile };
+        await SecureStore.setItemAsync(PARKED_ACCOUNT_KEY, JSON.stringify(accountMeta));
+        setParkedAccount(accountMeta);
+        console.log('[Auth] Session parked for phone:', phoneForPrefill);
+      } catch (e) {
+        console.log('[Auth] Failed to park session:', e);
+      }
+    }
+
+    // Store phone for welcome-back prefill (same as before).
+    if (phoneForPrefill) {
+      await AsyncStorage.setItem(LAST_PHONE_KEY, phoneForPrefill);
+    }
+
+    // Clear the live session WITHOUT revoking the token.
+    await supabase.auth.clearLocalSession();
+
+    // Clear UI state.
+    setSession(null);
+    setUser(null);
+    setActiveCustomer(null);
+    setMatchedCustomers([]);
+    setLinkingState('idle');
+    setSavedAddresses([]);
+    await AsyncStorage.removeItem(ACTIVE_CUSTOMER_KEY);
+    await AsyncStorage.removeItem(ADDRESSES_KEY);
+    queryClient.clear();
+  }, [queryClient, activeCustomer, phoneNumber]);
+
+  // vC16 Task A: Resume a parked session after PIN success. Restores the
+  // session from SecureStore to the live session path. No OTP, no SMS.
+  const resumeParkedSession = useCallback(async (): Promise<boolean> => {
+    if (Platform.OS === 'web') return false;
+    console.log('[Auth] Resuming parked session');
+    try {
+      const stored = await SecureStore.getItemAsync(PARKED_SESSION_KEY);
+      if (!stored) {
+        console.log('[Auth] No parked session found');
+        return false;
+      }
+      const session = JSON.parse(stored) as SupabaseSession;
+      // Restore the session to the live path.
+      await supabase.auth.resumeSession(session);
+
+      // Restore the active customer from the stored copy.
+      const customerStored = await AsyncStorage.getItem(ACTIVE_CUSTOMER_KEY);
+      if (customerStored) {
+        try {
+          const parsed = JSON.parse(customerStored) as Customer;
+          setActiveCustomer(parsed);
+          setLinkingState('linked');
+        } catch {}
+      }
+
+      // Clear the parked session — it's now live again.
+      await SecureStore.deleteItemAsync(PARKED_SESSION_KEY);
+      await SecureStore.deleteItemAsync(PARKED_ACCOUNT_KEY);
+      setParkedAccount(null);
+
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['addresses'] });
+      console.log('[Auth] Parked session resumed successfully');
+      return true;
+    } catch (e) {
+      console.log('[Auth] Failed to resume parked session:', e);
+      return false;
+    }
+  }, [queryClient]);
+
+  // vC16 Task A: Clear the parked session (used by PinLockProvider wipe paths —
+  // lockout, forgot-PIN — so a wiped PIN also wipes the parked session).
+  const clearParkedSession = useCallback(async () => {
+    if (Platform.OS === 'web') return;
+    try {
+      const stored = await SecureStore.getItemAsync(PARKED_SESSION_KEY);
+      if (stored) {
+        const session = JSON.parse(stored) as SupabaseSession;
+        // Revoke the parked token server-side.
+        await supabase.auth.revokeToken(session.access_token);
+      }
+      await SecureStore.deleteItemAsync(PARKED_SESSION_KEY);
+      await SecureStore.deleteItemAsync(PARKED_ACCOUNT_KEY);
+      setParkedAccount(null);
+      console.log('[Auth] Parked session cleared');
+    } catch (e) {
+      console.log('[Auth] Failed to clear parked session:', e);
+    }
+  }, []);
+
+  // vC16 Task A: REMOVE account (old hard logout, correctly named). Revokes
+  // the session server-side, wipes SecureStore (PIN, parked session, attempts)
+  // and the last-phone prefill. OTP required to return.
+  const removeAccount = useCallback(async () => {
+    console.log('[Auth] Remove account — full wipe');
     const phoneForPrefill = activeCustomer?.phone || phoneNumber || '';
     if (phoneForPrefill) {
       await AsyncStorage.setItem(LAST_PHONE_KEY, phoneForPrefill);
-      console.log('[Auth] Stored last phone for prefill:', phoneForPrefill);
     }
-    // vC14 Task A: clear PIN hash on sign-out so re-login requires fresh setup.
-    // The PIN lock is purely local; clearing it here ensures a clean state.
+    // Clear PIN + parked session + all SecureStore.
     await clearPinOnSignOut();
+    await clearParkedSession();
+    // Revoke the live session.
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.log('[Auth] Sign out error:', error.message);
@@ -330,10 +479,38 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     setMatchedCustomers([]);
     setLinkingState('idle');
     setSavedAddresses([]);
+    setParkedAccount(null);
     await AsyncStorage.removeItem(ACTIVE_CUSTOMER_KEY);
     await AsyncStorage.removeItem(ADDRESSES_KEY);
     queryClient.clear();
-  }, [queryClient, clearPinOnSignOut, activeCustomer, phoneNumber]);
+  }, [queryClient, clearPinOnSignOut, clearParkedSession, activeCustomer, phoneNumber]);
+
+  // vC15-compatible logout (kept for pin-lock.tsx lockout/forgot paths).
+  // This is the old hard logout — redirects to login. Now delegates to
+  // removeAccount semantics but is called from PIN lockout/forgot flows.
+  const logout = useCallback(async () => {
+    console.log('[Auth] Logout (hard — pin lockout/forgot path)');
+    const phoneForPrefill = activeCustomer?.phone || phoneNumber || '';
+    if (phoneForPrefill) {
+      await AsyncStorage.setItem(LAST_PHONE_KEY, phoneForPrefill);
+    }
+    await clearPinOnSignOut();
+    await clearParkedSession();
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.log('[Auth] Sign out error:', error.message);
+    }
+    setSession(null);
+    setUser(null);
+    setActiveCustomer(null);
+    setMatchedCustomers([]);
+    setLinkingState('idle');
+    setSavedAddresses([]);
+    setParkedAccount(null);
+    await AsyncStorage.removeItem(ACTIVE_CUSTOMER_KEY);
+    await AsyncStorage.removeItem(ADDRESSES_KEY);
+    queryClient.clear();
+  }, [queryClient, clearPinOnSignOut, clearParkedSession, activeCustomer, phoneNumber]);
 
   const addAddress = useCallback(async (address: Omit<SavedAddress, 'id'>) => {
     const newAddress: SavedAddress = { ...address, id: `addr_${Date.now()}` };
@@ -365,16 +542,29 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return savedAddresses.find(a => a.isDefault) || savedAddresses[0] || null;
   }, [savedAddresses]);
 
-  // vC13 Task B: save delivery address + township to the customer's own row.
-  // Uses customers_update_own_profile RLS (auth_user_id = auth.uid()), verified
-  // in prod. Updates ONLY address + township columns — nothing else.
-  const updateCustomerAddress = useCallback(async (address: string, township: string) => {
+  // vC16 Task B: save delivery address + township + landmark + GPS to the
+  // customer's own row. Uses customers_update_own_profile RLS (auth_user_id =
+  // auth.uid()), verified in prod. Column allowlist: address, township,
+  // landmark, gps_lat, gps_lng — nothing else, ever.
+  const updateCustomerAddress = useCallback(async (
+    address: string,
+    township: string,
+    landmark?: string | null,
+    gpsLat?: number | null,
+    gpsLng?: number | null,
+  ) => {
     if (!activeCustomer) {
       throw new Error('No active customer — cannot update address');
     }
     console.log('[Auth] Updating address for customer:', activeCustomer.id);
+    // Build the update payload with ONLY the allowed columns.
+    const update: Record<string, unknown> = { address, township };
+    if (landmark !== undefined) update.landmark = landmark || null;
+    if (gpsLat !== undefined) update.gps_lat = gpsLat;
+    if (gpsLng !== undefined) update.gps_lng = gpsLng;
+
     const { error } = await supabase
-      .fromUpdate('customers', { address, township })
+      .fromUpdate('customers', update)
       .eq('id', activeCustomer.id);
 
     if (error) {
@@ -382,7 +572,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       throw new Error(error.message);
     }
 
-    const updated: Customer = { ...activeCustomer, address, township };
+    const updated: Customer = {
+      ...activeCustomer,
+      address,
+      township,
+      landmark: landmark !== undefined ? (landmark || null) : activeCustomer.landmark,
+      gps_lat: gpsLat !== undefined ? gpsLat : activeCustomer.gps_lat,
+      gps_lng: gpsLng !== undefined ? gpsLng : activeCustomer.gps_lng,
+    };
     setActiveCustomer(updated);
     await AsyncStorage.setItem(ACTIVE_CUSTOMER_KEY, JSON.stringify(updated));
     queryClient.invalidateQueries({ queryKey: ['orders'] });
@@ -408,6 +605,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     savedAddresses,
     session,
     user,
+    // vC16 Task A: parked account + three-tier sign-out
+    parkedAccount,
+    softSignOut,
+    resumeParkedSession,
+    clearParkedSession,
+    removeAccount,
     sendOtp,
     verifyOtp,
     logout,

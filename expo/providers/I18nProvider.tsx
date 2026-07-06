@@ -175,6 +175,25 @@ const STRINGS = {
   welcome_back: { mm: 'ပြန်လည် ကြိုဆိုပါတယ်', en: 'Welcome back' },
   welcome_back_sub: { mm: 'OTP ပို့ရန် တစ်ချက်နှိပ်ပါ', en: 'One tap to send OTP' },
   not_you: { mm: 'သင်မဟုတ်ဘူးလား? အခြားနံပါတ်သုံးပါ', en: 'Not you? Use another number' },
+
+  // vC16 Task A — Soft sign-out + account tile
+  account_tile_enter_pin: { mm: 'ဆက်လုပ်ရန် PIN ထည့်ပါ', en: 'Enter PIN to continue' },
+  switch_account: { mm: 'အခြားနံပါတ်သုံးပါ', en: 'Use another number' },
+  sign_out_soft: { mm: 'အကောင့်မှ ထွက်ရန်', en: 'Sign out' },
+  sign_out_soft_confirm: { mm: 'ထွက်လျှင် PIN ဖြင့် ပြန်ဝင်နိုင်ပါသည်။ SMS မလိုပါ။ ဆက်လုပ်မလား?', en: 'You can return with your PIN — no SMS needed. Continue?' },
+  remove_account: { mm: 'ဤစက်မှ အကောင့်ဖျက်ပါ', en: 'Remove account from this device' },
+  remove_account_confirm: { mm: 'ဤစက်မှ သင့်အကောင့်ကို ဖယ်ရှားပါမည်။ ပြန်ဝင်ရန် SMS ကုဒ် လိုပါမည်။ ဆက်လုပ်မလား?', en: 'This removes your account from this device. You will need an SMS code to sign back in. Continue?' },
+  remove_account_desc: { mm: 'အကောင့် လုံးဝ ဖယ်ရှားပါမည်', en: 'Fully remove account and data from this device' },
+
+  // vC16 Task B — Address experience (landmark + GPS)
+  landmark_label: { mm: 'အမှတ်အသား (ရွေးချယ်)', en: 'Landmark (optional)' },
+  landmark_placeholder: { mm: 'ဥပမာ - City Mart အနီး', en: 'e.g. near City Mart' },
+  use_my_location: { mm: 'ကျွန်တော်ရဲ့ နေရာကို သုံးပါ', en: 'Use my location' },
+  location_saved: { mm: 'နေရာ သိမ်းဆည်ပြီးပါပြီ ✓', en: 'Location saved ✓' },
+  location_denied: { mm: 'နေရာ ခွင့်ပြုချက် မရပါ။ လက်ဖြင့် ထည့်နိုင်ပါသည်။', en: 'Location permission denied. You can still enter your address manually.' },
+  location_loading: { mm: 'နေရာ ရှာနေသည်...', en: 'Getting location...' },
+  address_saved_success: { mm: 'လိပ်စာ သိမ်းဆည်ပြီးပါပြီ ✓', en: 'Address saved ✓' },
+  edit_address_title: { mm: 'ပို့ဆောင်ရမည့်လိပ်စာ ပြင်ဆင်ပါ', en: 'Edit Delivery Address' },
 } as const;
 
 export type StringKey = keyof typeof STRINGS;

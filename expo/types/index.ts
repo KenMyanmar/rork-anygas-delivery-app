@@ -13,9 +13,22 @@ export interface Customer {
   secondary_phone: string | null;
   township: string | null;
   address: string | null;
+  // vC16: landmark + GPS coordinates for the address experience.
+  // Written via customers_update_own_profile RLS (verified in prod).
+  landmark: string | null;
+  gps_lat: number | null;
+  gps_lng: number | null;
   auth_user_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// vC16 Task A: A parked account from soft sign-out. The session is stored in
+// SecureStore; PIN re-enters without OTP. "Use another number" or "Remove
+// account" clears it and requires fresh OTP.
+export interface ParkedAccount {
+  phone: string;
+  name?: string | null;
 }
 
 export type CustomerLinkingState = 

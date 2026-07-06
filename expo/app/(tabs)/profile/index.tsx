@@ -20,6 +20,8 @@ import {
   FileText,
   Building2,
   Lock,
+  Trash2,
+  Navigation,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -29,7 +31,7 @@ import { useI18n } from '@/providers/I18nProvider';
 import { usePinLock } from '@/providers/PinLockProvider';
 
 export default function ProfileScreen() {
-  const { activeCustomer, activeProfile, savedAddresses, phoneNumber, logout } = useAuth();
+  const { activeCustomer, activeProfile, savedAddresses, phoneNumber, softSignOut, removeAccount } = useAuth();
   const { t, tMM, isMM, isEN, changeLanguage } = useI18n();
   const { lock } = usePinLock();
 
@@ -43,12 +45,13 @@ export default function ProfileScreen() {
     lock();
   }, [lock]);
 
-  // vC15 Task A: "Log out" demoted + gated behind a confirm dialog that steers
-  // users to the free Lock path instead. Logout still wipes session + PIN.
-  const handleLogout = useCallback(() => {
+  // vC16 Task A: "Sign out" is now SOFT — parks the session, shows account
+  // tile. No OTP, no SMS to return. Confirm dialog steers users here over
+  // the destructive "Remove account" path.
+  const handleSignOut = useCallback(() => {
     Alert.alert(
-      t('log_out'),
-      t('log_out_confirm'),
+      t('sign_out_soft'),
+      t('sign_out_soft_confirm'),
       [
         { text: t('cancel'), style: 'cancel' },
         {
@@ -56,23 +59,51 @@ export default function ProfileScreen() {
           text: t('lock_app'),
           style: 'default',
           onPress: () => {
-            console.log('[Profile] User chose Lock app over logout');
+            console.log('[Profile] User chose Lock app over sign out');
             handleLockApp();
           },
         },
         {
-          // Destructive: actually log out (costs 20 MMK OTP on return)
-          text: t('log_out'),
+          // Soft sign-out: parks session, PIN re-enters
+          text: t('sign_out_soft'),
           style: 'destructive',
           onPress: async () => {
-            console.log('[Profile] User confirmed logout');
-            await logout();
+            console.log('[Profile] User confirmed soft sign-out');
+            await softSignOut();
+          },
+        },
+      ]
+    );
+  }, [softSignOut, t, handleLockApp]);
+
+  // vC16 Task A: "Remove account from this device" — the old hard logout,
+  // correctly named. Revokes session, wipes everything, OTP required to return.
+  const handleRemoveAccount = useCallback(() => {
+    Alert.alert(
+      t('remove_account'),
+      t('remove_account_confirm'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('remove_account'),
+          style: 'destructive',
+          onPress: async () => {
+            console.log('[Profile] User confirmed remove account');
+            await removeAccount();
             router.replace('/login');
           },
         },
       ]
     );
-  }, [logout, t, handleLockApp]);
+  }, [removeAccount, t]);
+
+  // vC16 Task B: navigate to the Delivery Address edit screen.
+  const handleEditAddress = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    router.push('/edit-address');
+  }, []);
 
   return (
     <ScrollView
@@ -103,15 +134,59 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <MapPin size={18} color={Colors.primary} />
-            <Text style={styles.sectionTitle}>{t('registered_address')}</Text>
-            <Text style={styles.sectionTitleMM}>{tMM('registered_address')}</Text>
+            <Text style={styles.sectionTitle}>{t('delivery_address')}</Text>
+            <Text style={styles.sectionTitleMM}>{tMM('delivery_address')}</Text>
           </View>
-          <View style={styles.addressCard}>
+          {/* vC16 Task B: tappable card → edit-address modal */}
+          <TouchableOpacity
+            style={styles.addressCard}
+            onPress={handleEditAddress}
+            activeOpacity={0.7}
+          >
             <View style={styles.addressIcon}>
               <MapPin size={16} color={Colors.primary} />
             </View>
-            <Text style={styles.addressText}>{activeCustomer.address}</Text>
-          </View>
+            <View style={styles.addressInfo}>
+              <Text style={styles.addressText}>{activeCustomer.address}</Text>
+              {activeCustomer.township && (
+                <Text style={styles.addressTownship}>{activeCustomer.township}</Text>
+              )}
+              {activeCustomer.landmark && (
+                <Text style={styles.addressLandmark} numberOfLines={1}>
+                  {isMM ? 'အမှတ်အသား' : 'Landmark'}: {activeCustomer.landmark}
+                </Text>
+              )}
+              {activeCustomer.gps_lat != null && activeCustomer.gps_lng != null && (
+                <View style={styles.gpsBadge}>
+                  <Navigation size={11} color={Colors.success} />
+                  <Text style={styles.gpsBadgeText}>GPS</Text>
+                </View>
+              )}
+            </View>
+            <ChevronRight size={18} color={Colors.textTertiary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* vC16 Task B: if no address, show a prominent add-address CTA */}
+      {!activeCustomer?.address && (
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.addAddressCard}
+            onPress={handleEditAddress}
+            activeOpacity={0.7}
+          >
+            <View style={styles.addAddressIcon}>
+              <MapPin size={20} color={Colors.primary} />
+            </View>
+            <View style={styles.addAddressInfo}>
+              <Text style={styles.addAddressTitle}>{t('add_delivery_address')}</Text>
+              <Text style={styles.addAddressSub}>
+                {isMM ? 'မှာယူရန် လိပ်စာ ထည့်ပါ' : 'Add your address to start ordering'}
+              </Text>
+            </View>
+            <ChevronRight size={18} color={Colors.primary} />
+          </TouchableOpacity>
         </View>
       )}
 
@@ -200,14 +275,24 @@ export default function ProfileScreen() {
         </View>
       </TouchableOpacity>
 
-      {/* vC15 Task A — Log out (demoted, text link) */}
+      {/* vC16 Task A — Sign out (soft, demoted text link) */}
       <TouchableOpacity
         style={styles.logoutLink}
-        onPress={handleLogout}
+        onPress={handleSignOut}
         activeOpacity={0.7}
       >
         <LogOut size={16} color={Colors.textTertiary} />
-        <Text style={styles.logoutLinkText}>{t('log_out_link')}</Text>
+        <Text style={styles.logoutLinkText}>{t('sign_out_soft')}</Text>
+      </TouchableOpacity>
+
+      {/* vC16 Task A — Remove account from this device (destructive, bottom) */}
+      <TouchableOpacity
+        style={styles.removeAccountLink}
+        onPress={handleRemoveAccount}
+        activeOpacity={0.7}
+      >
+        <Trash2 size={15} color={Colors.error} />
+        <Text style={styles.removeAccountText}>{t('remove_account')}</Text>
       </TouchableOpacity>
 
       <Text style={styles.version}>AnyGas 8484 v1.0.0</Text>
@@ -301,11 +386,71 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 2,
   },
-  addressText: {
+  addressInfo: {
     flex: 1,
+  },
+  addressText: {
     fontSize: 14,
     color: Colors.textSecondary,
     lineHeight: 20,
+  },
+  addressTownship: {
+    fontSize: 13,
+    color: Colors.textTertiary,
+    marginTop: 2,
+  },
+  addressLandmark: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    marginTop: 2,
+  },
+  gpsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+    backgroundColor: Colors.successLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  gpsBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: Colors.success,
+  },
+  // vC16 Task B: no-address CTA card
+  addAddressCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    padding: 16,
+    borderRadius: 16,
+    gap: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.primaryLight,
+  },
+  addAddressIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addAddressInfo: {
+    flex: 1,
+  },
+  addAddressTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  addAddressSub: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    marginTop: 2,
   },
   addressesList: {
     backgroundColor: Colors.surface,
@@ -455,6 +600,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500' as const,
     color: Colors.textTertiary,
+  },
+  // vC16 Task A — Remove account (destructive, bottom)
+  removeAccountLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 6,
+    marginBottom: 8,
+  },
+  removeAccountText: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: Colors.error,
   },
   // vC14 legacy logout button styles (removed in vC15, kept for reference)
   logoutButton: {

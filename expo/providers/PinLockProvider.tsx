@@ -25,6 +25,8 @@ const PIN_SALT_KEY = 'anygas_pin_salt';
 const BIOMETRIC_PREF_KEY = 'anygas_biometric_unlock';
 const PIN_ATTEMPTS_KEY = 'anygas_pin_attempts'; // vC15 Task C: persisted attempt counter
 const LAST_PHONE_KEY = 'anygas_last_phone'; // vC15 Task B: welcome-back prefill (AsyncStorage, not SecureStore)
+const PARKED_SESSION_KEY = 'anygas_parked_session'; // vC16 Task A: parked session (cleared on wipe)
+const PARKED_ACCOUNT_KEY = 'anygas_parked_account'; // vC16 Task A: parked account metadata
 const BACKGROUND_THRESHOLD_MS = 60_000; // lock after >60s in background
 const MAX_PIN_ATTEMPTS = 5;
 
@@ -76,14 +78,19 @@ async function hasPinSet(): Promise<boolean> {
   }
 }
 
-/** Clear all PIN-related SecureStore entries. */
+/** Clear all PIN-related SecureStore entries.
+ * vC16 Task A: also clears the parked session so wipe paths (lockout,
+ * forgot-PIN) don't leave an unattended restorable session behind. */
 async function clearPin(): Promise<void> {
   try {
     await SecureStore.deleteItemAsync(PIN_HASH_KEY);
     await SecureStore.deleteItemAsync(PIN_SALT_KEY);
     await SecureStore.deleteItemAsync(BIOMETRIC_PREF_KEY);
     await clearStoredAttempts();
-    console.log('[PinLock] PIN cleared');
+    // vC16 Task A: wipe parked session + account metadata on every PIN clear.
+    await SecureStore.deleteItemAsync(PARKED_SESSION_KEY);
+    await SecureStore.deleteItemAsync(PARKED_ACCOUNT_KEY);
+    console.log('[PinLock] PIN cleared (+ parked session wiped)');
   } catch (e) {
     console.log('[PinLock] clearPin error:', e);
   }
