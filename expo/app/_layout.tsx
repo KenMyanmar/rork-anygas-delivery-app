@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { OrderProvider } from "@/providers/OrderProvider";
@@ -45,6 +46,8 @@ function RootLayoutNav() {
 function PinLockOverlay() {
   const { lockState } = usePinLock();
   const { isAuthenticated } = useAuth();
+  // vC15.1 — PIN lock is native-only. On web, never render the overlay.
+  if (Platform.OS === 'web') return null;
   // Only show the lock overlay when the user is authenticated. Over the login
   // screen (unauthenticated), the overlay must stay hidden so OTP entry works.
   // PinLockScreen itself also returns null when unlocked/loading.

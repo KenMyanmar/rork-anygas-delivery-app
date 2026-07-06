@@ -172,6 +172,15 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
   // Initialize: check if PIN is set, load biometric prefs, load persisted attempts
   const initialize = useCallback(async () => {
     console.log('[PinLock] Initializing...');
+    // vC15.1 — PIN lock is a native-only feature. On web (browser preview),
+    // bypass entirely: no SecureStore reads, no setup, no lock screen. The web
+    // preview exists for layout checks only; PIN behavior is tested on device.
+    if (Platform.OS === 'web') {
+      console.log('[PinLock] web platform → unlocked (PIN lock is native-only)');
+      setBiometricAvailable(false);
+      setLockState('unlocked');
+      return;
+    }
     const hasPin = await hasPinSet();
     const bioAvail = await isBiometricAvailable();
     setBiometricAvailable(bioAvail);
