@@ -4,6 +4,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, SupabaseSession, SupabaseUser } from '@/lib/supabase';
 import { Customer, CustomerLinkingState, SavedAddress } from '@/types';
+import { usePinLock } from '@/providers/PinLockProvider';
 
 const ACTIVE_CUSTOMER_KEY = 'anygas_active_customer';
 const ADDRESSES_KEY = 'anygas_addresses';
@@ -25,6 +26,7 @@ function authPhoneToLocalPhone(authPhone: string): string {
 
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const queryClient = useQueryClient();
+  const { clearPinOnSignOut, recheckPin } = usePinLock();
   const [session, setSession] = useState<SupabaseSession | null>(null);
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -219,6 +221,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     console.log('[Auth] OTP verified, session:', data.session ? 'yes' : 'no');
 
     if (data.user) {
+      // vC14 Task A: after a successful OTP login, recheck whether a PIN is
+      // set. New device / fresh login → no_pin → mandatory PIN setup.
+      // Existing PIN on this device → locked → unlock screen.
+      recheckPin();
       setLinkingState('checking');
       const customers = await findCustomersByPhone(formattedPhone, data.user.id);
 
@@ -239,7 +245,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
 
     return { ...data, linkingState: 'idle' as const };
-  }, [findCustomersByPhone, linkCustomer]);
+  }, [findCustomersByPhone, linkCustomer, recheckPin]);
 
   const registerNewCustomer = useCallback(async (customerData: {
     name: string;
@@ -303,6 +309,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const logout = useCallback(async () => {
     console.log('[Auth] Logging out');
+    // vC14 Task A: clear PIN hash on sign-out so re-login requires fresh setup.
+    // The PIN lock is purely local; clearing it here ensures a clean state.
+    await clearPinOnSignOut();
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.log('[Auth] Sign out error:', error.message);
@@ -316,7 +325,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     await AsyncStorage.removeItem(ACTIVE_CUSTOMER_KEY);
     await AsyncStorage.removeItem(ADDRESSES_KEY);
     queryClient.clear();
-  }, [queryClient]);
+  }, [queryClient, clearPinOnSignOut]);
 
   const addAddress = useCallback(async (address: Omit<SavedAddress, 'id'>) => {
     const newAddress: SavedAddress = { ...address, id: `addr_${Date.now()}` };

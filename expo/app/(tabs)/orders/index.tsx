@@ -97,7 +97,7 @@ export default function OrdersScreen() {
           <Package size={22} color={getStatusColor(item.status)} />
         </View>
         <View style={styles.orderInfo}>
-          <Text style={styles.orderBrand}>{item.brandName || 'Gas'} {item.cylinderSize}kg</Text>
+          <Text style={styles.orderBrand}>{item.brandName || 'Gas'} {item.cylinderSize}kg{item.cylinderType ? ` · ${item.cylinderType}` : ''}</Text>
           <Text style={styles.orderDate}>{formatDate(item.createdAt)}</Text>
           <View style={styles.statusRow}>
             <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />

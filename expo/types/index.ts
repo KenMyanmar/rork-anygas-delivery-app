@@ -99,7 +99,10 @@ export interface Order {
   brandId: string;
   brandName?: string;
   cylinderSize: number;
-  cylinderTypeId?: string;
+  // vC14 Task B: cylinder_type is the real, populated text column on orders
+  // (the EF writes the display name at creation). Replaces the ghost
+  // cylinder_type_id column that doesn't exist in the 61-column orders table.
+  cylinderType?: string | null;
   orderType: OrderType;
   pricing: PricingBreakdown;
   address: SavedAddress;

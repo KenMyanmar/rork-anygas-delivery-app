@@ -102,7 +102,7 @@ export default function TrackingScreen() {
   const isTerminal = isCancelled || isFailed;
   const currentStage = isTerminal ? -1 : computeStage(activeOrder);
 
-  const orderLabel = [activeOrder.brandName, activeOrder.cylinderSize ? `${activeOrder.cylinderSize} kg` : null].filter(Boolean).join(' · ') || 'Gas';
+  const orderLabel = [activeOrder.brandName, activeOrder.cylinderSize ? `${activeOrder.cylinderSize} kg` : null, activeOrder.cylinderType || null].filter(Boolean).join(' · ') || 'Gas';
 
   const orderTypeLabel = activeOrder.orderType === 'refill' ? t('type_refill')
     : t('type_new_setup');

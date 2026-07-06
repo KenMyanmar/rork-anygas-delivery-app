@@ -32,12 +32,16 @@ interface EdgeFunctionOrderPayload {
 // rating, rating_comment, estimated_delivery, brand_name (dead — 0% filled,
 // EF write is Lane 2), cylinder_display_name (same), delivery_address_id,
 // delivery_latitude/longitude (no such columns; address lives in orders.address).
+// vC14 Task B: cylinder_size + cylinder_type_id were ghosts too — replaced with
+// cylinder_type (text, populated — the EF writes the display name at creation).
 interface SupabaseOrderRow {
   id: string;
   customer_id: string;
   brand_id: string;
   cylinder_size: number;
-  cylinder_type_id: string | null;
+  // vC14 Task B: cylinder_type is the real populated text column. The EF writes
+  // the display name (e.g. "Refill", "New Cylinder") at order creation.
+  cylinder_type: string | null;
   order_type: string;
   total_amount: number;
   gas_subtotal: number;
@@ -80,7 +84,8 @@ function mapSupabaseOrderToOrder(o: SupabaseOrderRow): Order {
     // Hydrated from catalog cache (orders.brand_name is 0% filled in prod).
     brandName: BRAND_NAME_CACHE.get(o.brand_id) || undefined,
     cylinderSize: o.cylinder_size,
-    cylinderTypeId: o.cylinder_type_id ?? undefined,
+    // vC14 Task B: cylinder_type is the real populated text column.
+    cylinderType: o.cylinder_type ?? undefined,
     orderType: o.order_type as Order['orderType'],
     pricing: {
       gasPrice: o.gas_subtotal || 0,
@@ -228,7 +233,9 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
       brandId: orderParams.brandId,
       brandName: orderParams.brandName,
       cylinderSize: orderParams.cylinderSize,
-      cylinderTypeId: orderParams.cylinderTypeId,
+      // vC14 Task B: store the display name from the order params (cylinder_type
+      // is the real column the EF writes at creation).
+      cylinderType: orderParams.cylinderDisplayName ?? undefined,
       orderType: orderParams.orderType as Order['orderType'],
       pricing: orderParams.pricing,
       address: orderParams.address,

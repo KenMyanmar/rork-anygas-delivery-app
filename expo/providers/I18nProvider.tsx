@@ -140,6 +140,31 @@ const STRINGS = {
   // Order errors
   order_failed: { mm: 'မှာယူမှု မအောင်မြင်ပါ', en: 'Order Failed' },
   price_changed: { mm: 'စျေးနှုန်း ပြောင်းလဲသွားပါသည်။ ပြန်လည် စစ်ဆေးပြီး ကြိုးစားကြည့်ပါ။', en: 'Price changed since you opened the order. Please review and try again.' },
+
+  // vC14 Task A — PIN / biometric app-lock (KBZ Pay pattern)
+  // Setup
+  pin_setup_title: { mm: 'PIN ကုဒ် သတ်မှတ်ပါ', en: 'Set Up PIN' },
+  pin_setup_subtitle: { mm: 'သင့်အကောင့် လုံခြုံရေးအတွက် 4 လုံး PIN ကုဒ် ထည့်ပါ', en: 'Enter a 4-digit PIN to secure your account' },
+  pin_confirm_subtitle: { mm: 'အတည်ပြုရန် PIN ကုဒ်ကို ထပ်ထည့်ပါ', en: 'Re-enter your PIN to confirm' },
+  pin_mismatch: { mm: 'PIN ကုဒ်များ မကိုက်ညီပါ။ ပြန်လည် စတင်ပါ။', en: 'PINs do not match. Please start again.' },
+  pin_too_short: { mm: 'PIN ကုဒ်သည် 4 လုံး ဖြစ်ရပါသည်။', en: 'PIN must be 4 digits.' },
+  // Unlock
+  pin_unlock_title: { mm: 'အက်ပ်ကို ဖွင့်ရန် PIN ထည့်ပါ', en: 'Enter PIN to Unlock' },
+  pin_unlock_subtitle: { mm: 'သင့် PIN ကုဒ် 4 လုံး ထည့်ပါ', en: 'Enter your 4-digit PIN' },
+  pin_wrong: { mm: 'PIN မမှန်ပါ။', en: 'Wrong PIN.' },
+  pin_attempts_remaining: { mm: 'ကြိုးစားရန် {n} ကြိမ်ကျန်ပါသည်', en: '{n} attempts remaining' },
+  pin_locked_out: { mm: '5 ကြိမ် မှားယွင်းခဲ့ပါသည်။ လုံခြုံရေးအရ ထွက်သွားပါပြီ။ ပြန်လည် လော့ဂ်အင် ပါ။', en: 'Too many wrong attempts. You have been signed out for security. Please log in again.' },
+  // Biometric
+  biometric_unlock: { mm: 'လက်ဗွေရာ/မျက်နှာဖြင့် ဖွင့်ပါ', en: 'Unlock with Biometrics' },
+  biometric_prompt_title: { mm: 'AnyGas ဖွင့်ရန် အတည်ပြုပါ', en: 'Authenticate to Open AnyGas' },
+  biometric_prompt_subtitle: { mm: 'လက်ဗွေရာ သို့မဟုတ် မျက်နှာကို အသုံးပြုပါ', en: 'Use your fingerprint or face' },
+  biometric_toggle: { mm: 'လက်ဗွေရာ/မျက်နှာဖြင့် ဖွင့်ရန်', en: 'Unlock with Fingerprint/Face' },
+  biometric_unavailable: { mm: 'ဤစက်တွင် လက်ဗွေရာ/မျက်နှာ မရှိပါ။ PIN ကို အသုံးပြုပါ။', en: 'Biometrics not available on this device. Use your PIN.' },
+  // Forgot PIN
+  pin_forgot: { mm: 'PIN မမှတ်မိဘူး', en: 'Forgot PIN?' },
+  pin_forgot_confirm: { mm: 'PIN ကို ပြန်သတ်မှတ်ရန် ထွက်ရန် လိုပါသည်။ ထွက်ပြီး ပြန်လည် လော့ဂ်အင် ပါမည်။ ဆက်လုပ်မလား?', en: 'Resetting your PIN requires signing out and logging in again. Continue?' },
+  // Misc
+  pin_continue: { mm: 'ဆက်လုပ်ပါ', en: 'Continue' },
 } as const;
 
 export type StringKey = keyof typeof STRINGS;

@@ -186,7 +186,7 @@ export default function HomeScreen() {
                 </View>
                 <View style={styles.activeOrderDetails}>
                   <Text style={styles.activeOrderBrand}>
-                    {activeOrder.brandName || 'Gas'} {activeOrder.cylinderSize}kg
+                    {activeOrder.brandName || 'Gas'} {activeOrder.cylinderSize}kg{activeOrder.cylinderType ? ` · ${activeOrder.cylinderType}` : ''}
                   </Text>
                   {/* vC13: fake ETA removed — no eta column exists on orders
                       (bounded-negative). The tracker shows honest stage-based
@@ -232,7 +232,7 @@ export default function HomeScreen() {
                         {lastOrder.brandName || 'Gas'}
                       </Text>
                       <Text style={styles.reorderDetails}>
-                        {lastOrder.cylinderSize}kg • {lastOrder.orderType === 'refill' ? t('type_refill') : t('type_new_setup')}
+                        {lastOrder.cylinderSize}kg{lastOrder.cylinderType ? ` · ${lastOrder.cylinderType}` : ''} • {lastOrder.orderType === 'refill' ? t('type_refill') : t('type_new_setup')}
                       </Text>
                       <Text style={styles.reorderPrice}>
                         {lastOrder.pricing.total.toLocaleString()} MMK
