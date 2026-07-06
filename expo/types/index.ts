@@ -116,6 +116,9 @@ export interface Order {
   // (the EF writes the display name at creation). Replaces the ghost
   // cylinder_type_id column that doesn't exist in the 61-column orders table.
   cylinderType?: string | null;
+  // vC17: quantity is a real column on orders (the EF accepts quantity 1–10).
+  // Defaults to 1 for orders created before this field was surfaced.
+  quantity?: number;
   orderType: OrderType;
   pricing: PricingBreakdown;
   address: SavedAddress;

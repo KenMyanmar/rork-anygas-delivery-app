@@ -30,6 +30,10 @@ import {
   Cylinder,
   Crosshair,
   Navigation,
+  Minus,
+  Plus,
+  RotateCw,
+  Sparkles,
 } from 'lucide-react-native';
 import { Image } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -61,20 +65,25 @@ interface CatalogBrand {
   allow_new_setup: boolean;
 }
 
-type Step = 'brand' | 'size' | 'type' | 'pricing' | 'address' | 'payment' | 'confirm';
-
-const STEPS_WITH_ADDRESS: Step[] = ['brand', 'size', 'type', 'pricing', 'address', 'payment', 'confirm'];
-const STEPS_WITHOUT_ADDRESS: Step[] = ['brand', 'size', 'type', 'pricing', 'payment', 'confirm'];
+// vC17 r2: intent-first flow. Intent (Refill/New Set) is the first screen;
+// the memory shortcut ("Your usual") appears for repeat refill customers.
+// The old standalone 'type' step is gone — intent replaces it.
+type Step = 'intent' | 'usual' | 'brand' | 'size' | 'pricing' | 'address' | 'payment' | 'confirm';
 
 const STEP_LABELS: Record<Step, string> = {
+  intent: 'Order',
+  usual: 'Usual',
   brand: 'Brand',
   size: 'Size',
-  type: 'Type',
   pricing: 'Price',
   address: 'Address',
   payment: 'Payment',
   confirm: 'Confirm',
 };
+
+// vC17: client-side quantity cap. EF accepts 1–10; 5 is the sane household ceiling.
+const MAX_QUANTITY = 5;
+const MIN_QUANTITY = 1;
 
 const BRAND_COLORS: Record<string, string> = {
   'Parami': '#DC2626',
@@ -120,10 +129,12 @@ export default function OrderScreen() {
     reorderType?: string;
   }>();
   const { savedAddresses, getDefaultAddress, customerId, activeCustomer, updateCustomerAddress } = useAuth();
-  const { placeOrder } = useOrders();
+  const { placeOrder, getLastDeliveredOrder, orders } = useOrders();
   const { t, tMM, language, isMM } = useI18n();
 
-  const [currentStep, setCurrentStep] = useState<Step>('brand');
+  // vC17 r2: intent-first flow. Intent is the first screen; the memory
+  // shortcut ("Your usual") appears for repeat refill customers.
+  const [currentStep, setCurrentStep] = useState<Step>('intent');
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(
     params.reorderBrand || null
   );
@@ -131,6 +142,8 @@ export default function OrderScreen() {
   const [selectedType, setSelectedType] = useState<OrderType | null>(
     (params.reorderType as OrderType) || null
   );
+  // vC17: quantity stepper — floor 1, cap 5 client-side (EF accepts 10).
+  const [quantity, setQuantity] = useState<number>(1);
   // vC13 Task B: address gate — checks activeCustomer.address only (orders.address
   // is NOT NULL; create-customer-order inserts customer.address → NULL crashes 500).
   // 80% of app-linked customers have no address. The gate prompts before checkout.
@@ -165,7 +178,6 @@ export default function OrderScreen() {
   const [isSavingAddress, setIsSavingAddress] = useState<boolean>(false);
   const [townshipPickerOpen, setTownshipPickerOpen] = useState<boolean>(false);
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod | null>(null);
-  const [quantity] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
@@ -214,11 +226,32 @@ export default function OrderScreen() {
     }));
   }, [selectedCatalogEntry]);
 
+  // vC17 r2: reorder deep-link from the home "Quick reorder" card. Prefills
+  // brand/size/type and jumps straight to pricing (skipping the intent screen).
   useEffect(() => {
     if (params.reorderBrand && params.reorderSize && params.reorderType) {
+      setSelectedType((params.reorderType as OrderType) || null);
       setCurrentStep('pricing');
     }
   }, []);
+
+  // vC17 r2: memory shortcut — last delivered (or most recent) order for the
+  // "Your usual" card. Only shown for refill intent + customers with history.
+  const lastDeliveredOrder = useMemo(() => getLastDeliveredOrder(), [getLastDeliveredOrder, orders]);
+  const usualBrandId = lastDeliveredOrder?.brandId || null;
+  const usualCylinderSize = lastDeliveredOrder?.cylinderSize || null;
+  const usualQuantity = lastDeliveredOrder?.quantity || 1;
+  const usualOrderType = lastDeliveredOrder?.orderType || null;
+  const usualBrandName = lastDeliveredOrder?.brandName || null;
+  const usualCylinderType = lastDeliveredOrder?.cylinderType || null;
+  const usualTotal = lastDeliveredOrder?.pricing?.total || null;
+  const hasUsual = !!(usualBrandId && usualCylinderSize && usualOrderType);
+  // Catalog entry for the usual brand — needed to resolve the cylinder option
+  // object when the customer taps "Order again".
+  const usualCatalogEntry = useMemo(() => {
+    if (!catalogQuery.data || !usualBrandId) return null;
+    return catalogQuery.data.find(e => e.brand.id === usualBrandId) || null;
+  }, [catalogQuery.data, usualBrandId]);
 
   const selectedBrand = useMemo(() => {
     const brand = brands.find(b => b.id === selectedBrandId) || null;
@@ -228,12 +261,20 @@ export default function OrderScreen() {
     return brand;
   }, [brands, selectedBrandId]);
 
-  // vC13 Task B: show address step when customer has no address (gate), when user
-  // tapped Change (showAddressStep), or when editing the address.
+  // vC17 r2: step sequence is dynamic. Intent is always first. For refill +
+  // history, the "usual" card is offered (but is part of the intent step's
+  // render, not a separate navigated step). The old standalone 'type' step is
+  // gone — intent replaces it. The address step is gated as before.
   const needsAddressStep = !customerHasAddress || showAddressStep || editingAddress;
-  const steps = needsAddressStep ? STEPS_WITH_ADDRESS : STEPS_WITHOUT_ADDRESS;
+  const buildSteps = useCallback((): Step[] => {
+    const base: Step[] = ['intent', 'brand', 'size', 'pricing'];
+    if (needsAddressStep) base.push('address');
+    base.push('payment', 'confirm');
+    return base;
+  }, [needsAddressStep]);
+  const steps = buildSteps();
   const currentStepIndex = steps.indexOf(currentStep);
-  const progress = (currentStepIndex + 1) / steps.length;
+  const progress = currentStepIndex >= 0 ? (currentStepIndex + 1) / steps.length : 0;
 
   const animateTransition = useCallback(() => {
     slideAnim.setValue(30);
@@ -250,6 +291,70 @@ export default function OrderScreen() {
       animateTransition();
     }
   }, [currentStep, animateTransition, steps]);
+
+  // vC17 r2: selecting an intent card drives the whole downstream flow.
+  // Refill + history → show the "Your usual" card (inline on the intent step).
+  // Either way, advance to brand (filtered by intent).
+  const handleSelectIntent = useCallback((intent: OrderType) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    setSelectedType(intent);
+    // Reset downstream selections so a prior brand/cylinder from a different
+    // intent doesn't bleed through (e.g. a new_setup-only brand for refill).
+    setSelectedBrandId(null);
+    setSelectedCylinder(null);
+    setQuantity(1);
+    setCurrentStep('brand');
+    animateTransition();
+  }, [animateTransition]);
+
+  // vC17 r2: "Order again" from the usual card — prefill brand/cylinder/qty
+  // from the last delivered order and jump straight to confirm (pricing step).
+  const handleOrderAgain = useCallback(() => {
+    if (!hasUsual || !usualCatalogEntry) return;
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    }
+    const cyl = usualCatalogEntry.products.find(p => p.size_kg === usualCylinderSize);
+    if (cyl) {
+      const pricePerKg = cyl.price_per_kg ?? usualCatalogEntry.price_per_kg ?? 0;
+      setSelectedCylinder({
+        id: cyl.cylinder_type_id,
+        size: cyl.size_kg,
+        displayName: cyl.display_name,
+        cylinderPrice: cyl.cylinder_price,
+        pricePerKg,
+        gasPrice: Math.round(pricePerKg * cyl.size_kg),
+        imageUrl: cyl.image_url,
+      });
+    }
+    setSelectedBrandId(usualBrandId);
+    setSelectedType(usualOrderType);
+    setQuantity(usualQuantity);
+    setCurrentStep('pricing');
+    animateTransition();
+  }, [hasUsual, usualCatalogEntry, usualCylinderSize, usualBrandId, usualOrderType, usualQuantity, animateTransition]);
+
+  // vC17: quantity stepper handlers with haptics.
+  const incrementQty = useCallback(() => {
+    setQuantity(prev => {
+      const next = Math.min(prev + 1, MAX_QUANTITY);
+      if (next !== prev && Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      return next;
+    });
+  }, []);
+  const decrementQty = useCallback(() => {
+    setQuantity(prev => {
+      const next = Math.max(prev - 1, MIN_QUANTITY);
+      if (next !== prev && Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      return next;
+    });
+  }, []);
 
   const goBack = useCallback(() => {
     if (currentStep === 'address' && customerHasAddress && !editingAddress) {
@@ -286,6 +391,7 @@ export default function OrderScreen() {
     if (selectedType === 'refill') {
       // Authoritative: refill_delivery_fee from the catalog-list response (DB-sourced).
       // Fallback to the v45 contract constants only if the column is missing.
+      // vC17: delivery fee is per-trip by business design — never multiplied by qty.
       const dbFee = selectedCatalogEntry?.brand?.refill_delivery_fee;
       if (dbFee != null) {
         deliveryFee = dbFee;
@@ -295,6 +401,7 @@ export default function OrderScreen() {
           : REFILL_FEE_STANDARD;
       }
     } else if (selectedType === 'new_setup') {
+      // vC17: cylinder cost scales with quantity; delivery is free for new setups.
       cylinderPrice = selectedCylinder.cylinderPrice * quantity;
       deliveryFee = 0;
     }
@@ -341,11 +448,98 @@ export default function OrderScreen() {
 
   const renderStepContent = () => {
     switch (currentStep) {
+      // vC17 r2: Step 1 — Intent (Refill / New Set). Two big cards, Burmese-first.
+      // For refill + history, the "Your usual" memory shortcut appears above.
+      case 'intent':
+        return (
+          <View style={styles.stepContent}>
+            <Text style={styles.stepTitle}>{t('intent_title')}</Text>
+            <Text style={styles.stepTitleMM}>{tMM('intent_title')}</Text>
+
+            {/* vC17 r2: memory shortcut — only for refill intent + history. */}
+            {hasUsual && (
+              <View style={styles.usualCard}>
+                <View style={styles.usualHeader}>
+                  <RotateCw size={16} color={Colors.primary} />
+                  <Text style={styles.usualTitle}>{t('usual_card_title')}</Text>
+                </View>
+                <Text style={styles.usualDetail}>
+                  {usualQuantity > 1 ? `${usualQuantity}× ` : ''}{usualBrandName || 'Gas'} {usualCylinderSize}kg{usualCylinderType ? ` · ${usualCylinderType}` : ''}
+                </Text>
+                {usualTotal != null && (
+                  <Text style={styles.usualPrice}>{formatPrice(usualTotal)} MMK</Text>
+                )}
+                <View style={styles.usualActions}>
+                  <TouchableOpacity
+                    style={styles.usualOrderBtn}
+                    onPress={handleOrderAgain}
+                    activeOpacity={0.85}
+                    testID="usual-order-again"
+                  >
+                    <Flame size={16} color="#FFFFFF" />
+                    <Text style={styles.usualOrderBtnText}>{t('order_again')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.usualChangeBtn}
+                    onPress={() => handleSelectIntent('refill')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.usualChangeBtnText}>{t('usual_change')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.intentGrid}>
+              {/* Refill — the default highway (94.9% of orders). */}
+              <TouchableOpacity
+                style={styles.intentCard}
+                onPress={() => handleSelectIntent('refill')}
+                activeOpacity={0.8}
+                testID="intent-refill"
+              >
+                <View style={[styles.intentIconWrap, styles.intentIconRefill]}>
+                  <Flame size={28} color="#FFFFFF" />
+                </View>
+                <Text style={styles.intentTitleMM}>{tMM('intent_refill_title')}</Text>
+                <Text style={styles.intentTitle}>{t('intent_refill_title')}</Text>
+                <Text style={styles.intentDesc}>{t('intent_refill_desc')}</Text>
+              </TouchableOpacity>
+
+              {/* New Set — cylinder + regulator. Promotions badge slot for Lane 2. */}
+              <TouchableOpacity
+                style={styles.intentCard}
+                onPress={() => handleSelectIntent('new_setup')}
+                activeOpacity={0.8}
+                testID="intent-newset"
+              >
+                <View style={[styles.intentIconWrap, styles.intentIconNewSet]}>
+                  <Sparkles size={28} color="#FFFFFF" />
+                </View>
+                <Text style={styles.intentTitleMM}>{tMM('intent_newset_title')}</Text>
+                <Text style={styles.intentTitle}>{t('intent_newset_title')}</Text>
+                <Text style={styles.intentDesc}>{t('intent_newset_desc')}</Text>
+                <View style={styles.intentBadge}>
+                  <Text style={styles.intentBadgeText}>{t('intent_promotions_soon')}</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+
       case 'brand':
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>{isMM ? t('select_brand') : t('select_brand')}</Text>
+            <Text style={styles.stepTitle}>{t('select_brand')}</Text>
             <Text style={styles.stepTitleMM}>{tMM('select_brand')}</Text>
+            {/* vC17 r2: show the selected intent as a context chip. */}
+            <View style={styles.intentContextRow}>
+              <View style={styles.intentContextChip}>
+                <Text style={styles.intentContextText}>
+                  {selectedType === 'new_setup' ? t('intent_newset_title') : t('intent_refill_title')}
+                </Text>
+              </View>
+            </View>
             {catalogQuery.isLoading ? (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator size="large" color={Colors.primary} />
@@ -363,7 +557,9 @@ export default function OrderScreen() {
               </View>
             ) : (
               <View style={styles.optionsGrid}>
-                {brands.map((brand) => {
+                {/* vC17 r2: filter brands by intent. New Set shows only
+                    allow_new_setup brands; Refill shows all. */}
+                {brands.filter(b => selectedType !== 'new_setup' || b.allow_new_setup).map((brand) => {
                   const color = getBrandColor(brand.name);
                   const displayName = displayBrandName(brand.name);
                   return (
@@ -404,6 +600,7 @@ export default function OrderScreen() {
           </View>
         );
 
+      // vC17 r2: Step 4 — Cylinder + Quantity. Size selection + stepper.
       case 'size':
         return (
           <View style={styles.stepContent}>
@@ -429,91 +626,80 @@ export default function OrderScreen() {
                 <Text style={styles.errorText}>{t('no_sizes')}</Text>
               </View>
             ) : (
-              <View style={styles.sizeGrid}>
-                {cylinderOptions.map((cyl) => {
-                  const isSelected = selectedCylinder?.id === cyl.id;
-                  return (
-                    <TouchableOpacity
-                      key={cyl.id}
-                      style={[
-                        styles.sizeOption,
-                        isSelected && styles.sizeOptionSelected,
-                      ]}
-                      onPress={() => setSelectedCylinder(cyl)}
-                      activeOpacity={0.7}
-                    >
-                      {cyl.imageUrl ? (
-                        <Image
-                          source={{ uri: cyl.imageUrl }}
-                          style={styles.cylinderImage}
-                          resizeMode="contain"
-                        />
-                      ) : (
-                        <View style={[styles.cylinderIconWrap, isSelected && styles.cylinderIconWrapSelected]}>
-                          <Cylinder size={28} color={isSelected ? Colors.primary : Colors.textTertiary} />
-                        </View>
-                      )}
-                      <Text style={[styles.sizeNumber, isSelected && styles.sizeNumberSelected]}>
-                        {cyl.size}
-                      </Text>
-                      <Text style={[styles.sizeUnit, isSelected && styles.sizeUnitSelected]}>kg</Text>
-                      <Text style={[styles.sizeLabelMM, isSelected && styles.sizeLabelMMSelected]}>
-                        {cyl.displayName}
-                      </Text>
-                      <Text style={[styles.sizePrice, isSelected && styles.sizePriceSelected]}>
-                        {formatPrice(cyl.gasPrice)} MMK
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        );
+              <>
+                <View style={styles.sizeGrid}>
+                  {cylinderOptions.map((cyl) => {
+                    const isSelected = selectedCylinder?.id === cyl.id;
+                    return (
+                      <TouchableOpacity
+                        key={cyl.id}
+                        style={[
+                          styles.sizeOption,
+                          isSelected && styles.sizeOptionSelected,
+                        ]}
+                        onPress={() => setSelectedCylinder(cyl)}
+                        activeOpacity={0.7}
+                      >
+                        {cyl.imageUrl ? (
+                          <Image
+                            source={{ uri: cyl.imageUrl }}
+                            style={styles.cylinderImage}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={[styles.cylinderIconWrap, isSelected && styles.cylinderIconWrapSelected]}>
+                            <Cylinder size={28} color={isSelected ? Colors.primary : Colors.textTertiary} />
+                          </View>
+                        )}
+                        <Text style={[styles.sizeNumber, isSelected && styles.sizeNumberSelected]}>
+                          {cyl.size}
+                        </Text>
+                        <Text style={[styles.sizeUnit, isSelected && styles.sizeUnitSelected]}>kg</Text>
+                        <Text style={[styles.sizeLabelMM, isSelected && styles.sizeLabelMMSelected]}>
+                          {cyl.displayName}
+                        </Text>
+                        <Text style={[styles.sizePrice, isSelected && styles.sizePriceSelected]}>
+                          {formatPrice(cyl.gasPrice)} MMK
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
 
-      case 'type':
-        return (
-          <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>{t('order_type')}</Text>
-            <Text style={styles.stepTitleMM}>{tMM('order_type')}</Text>
-            <View style={styles.typeList}>
-              {ORDER_TYPES.map((type) => {
-                // Hide new_setup if the selected brand disallows it (from catalog-list).
-                if (type.id === 'new_setup' && selectedCatalogEntry && !selectedCatalogEntry.brand.allow_new_setup) {
-                  return null;
-                }
-                const label = type.id === 'refill' ? t('type_refill')
-                  : t('type_new_setup');
-                const labelMM = type.id === 'refill' ? tMM('type_refill')
-                  : tMM('type_new_setup');
-                const desc = type.id === 'refill' ? t('type_refill_desc')
-                  : t('type_new_setup_desc');
-                return (
-                  <TouchableOpacity
-                    key={type.id}
-                    style={[
-                      styles.typeOption,
-                      selectedType === type.id && styles.typeOptionSelected,
-                    ]}
-                    onPress={() => setSelectedType(type.id)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.typeOptionLeft}>
-                      <Text style={[styles.typeLabel, selectedType === type.id && styles.typeLabelSelected]}>
-                        {label}
-                      </Text>
-                      <Text style={styles.typeLabelMM}>{labelMM}</Text>
-                      <Text style={styles.typeDesc}>{desc}</Text>
+                {/* vC17: quantity stepper — shown once a cylinder is selected. */}
+                {selectedCylinder && (
+                  <View style={styles.qtySection}>
+                    <Text style={styles.qtyLabel}>{t('quantity')}</Text>
+                    <Text style={styles.qtyLabelMM}>{tMM('quantity')}</Text>
+                    <View style={styles.qtyStepper}>
+                      <TouchableOpacity
+                        style={[styles.qtyBtn, quantity <= MIN_QUANTITY && styles.qtyBtnDisabled]}
+                        onPress={decrementQty}
+                        disabled={quantity <= MIN_QUANTITY}
+                        activeOpacity={0.7}
+                        testID="qty-minus"
+                      >
+                        <Minus size={22} color={quantity <= MIN_QUANTITY ? Colors.textTertiary : Colors.primary} />
+                      </TouchableOpacity>
+                      <Text style={styles.qtyValue}>{quantity}</Text>
+                      <TouchableOpacity
+                        style={[styles.qtyBtn, quantity >= MAX_QUANTITY && styles.qtyBtnDisabled]}
+                        onPress={incrementQty}
+                        disabled={quantity >= MAX_QUANTITY}
+                        activeOpacity={0.7}
+                        testID="qty-plus"
+                      >
+                        <Plus size={22} color={quantity >= MAX_QUANTITY ? Colors.textTertiary : Colors.primary} />
+                      </TouchableOpacity>
                     </View>
-                    {selectedType === type.id && (
-                      <View style={styles.typeCheck}>
-                        <Check size={18} color={Colors.primary} />
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                    {/* vC17: live math preview — 2 × 23,000 = 46,000. */}
+                    <Text style={styles.qtyMath}>
+                      {quantity} × {formatPrice(selectedCylinder.gasPrice)} = {formatPrice(selectedCylinder.gasPrice * quantity)} MMK
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
           </View>
         );
 
@@ -547,7 +733,8 @@ export default function OrderScreen() {
             <View style={styles.pricingCard}>
               <View style={styles.pricingRow}>
                 <Text style={styles.pricingLabel}>
-                  {t('gas')} ({selectedCylinder?.size}kg × {formatPrice(selectedCylinder?.pricePerKg || 0)}/kg)
+                  {/* vC17: show the qty math live — 2 × (12.5kg × 1,840/kg) */}
+                  {t('gas')} ({quantity} × {selectedCylinder?.size}kg × {formatPrice(selectedCylinder?.pricePerKg || 0)}/kg)
                 </Text>
                 <Text style={styles.pricingValue}>{formatPrice(pricing.gasPrice)} MMK</Text>
               </View>
@@ -830,6 +1017,13 @@ export default function OrderScreen() {
                 <Text style={styles.confirmLabel}>{t('size')}</Text>
                 <Text style={styles.confirmValue}>{selectedCylinder?.size} kg</Text>
               </View>
+              {/* vC17: show quantity on confirm when >1 */}
+              {quantity > 1 && (
+                <View style={styles.confirmRow}>
+                  <Text style={styles.confirmLabel}>{t('quantity')}</Text>
+                  <Text style={styles.confirmValue}>{quantity}</Text>
+                </View>
+              )}
               <View style={styles.confirmRow}>
                 <Text style={styles.confirmLabel}>{t('type')}</Text>
                 <Text style={styles.confirmValue}>
@@ -949,9 +1143,11 @@ export default function OrderScreen() {
 
   const canProceed = () => {
     switch (currentStep) {
+      // vC17 r2: intent step — the cards themselves drive navigation, so the
+      // bottom Continue button is hidden on this step.
+      case 'intent': return false;
       case 'brand': return !!selectedBrandId;
       case 'size': return !!selectedCylinder;
-      case 'type': return !!selectedType;
       case 'pricing': return true;
       case 'address':
         // Address gate: if editing (or no address), the Save button drives proceed.
@@ -1000,6 +1196,8 @@ export default function OrderScreen() {
           </Animated.View>
         </ScrollView>
 
+        {/* vC17 r2: intent step — cards drive navigation, no Continue button. */}
+        {currentStep !== 'intent' && (
         <View style={styles.bottomBar}>
           {currentStep === 'address' && (editingAddress || !customerHasAddress) ? (
             // vC13 Task B: address gate — Save button drives the form submit.
@@ -1045,6 +1243,7 @@ export default function OrderScreen() {
             </TouchableOpacity>
           )}
         </View>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -1167,6 +1366,199 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+  },
+  // vC17 r2: intent-first cards (Step 1).
+  intentGrid: {
+    flexDirection: 'row',
+    gap: 14,
+    marginBottom: 16,
+  },
+  intentCard: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: 22,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: Colors.border,
+    minHeight: 220,
+    justifyContent: 'center',
+  },
+  intentIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  intentIconRefill: {
+    backgroundColor: Colors.primary,
+  },
+  intentIconNewSet: {
+    backgroundColor: '#7C3AED',
+  },
+  intentTitleMM: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  intentTitle: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.textSecondary,
+    marginBottom: 6,
+  },
+  intentDesc: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    textAlign: 'center' as const,
+  },
+  intentBadge: {
+    marginTop: 10,
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  intentBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#7C3AED',
+  },
+  // vC17 r2: "Your usual" memory shortcut card.
+  usualCard: {
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.primary + '30',
+  },
+  usualHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  usualTitle: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  usualDetail: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  usualPrice: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+    marginBottom: 14,
+  },
+  usualActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  usualOrderBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  usualOrderBtnText: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+  },
+  usualChangeBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  usualChangeBtnText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.textSecondary,
+  },
+  // vC17 r2: intent context chip on brand step.
+  intentContextRow: {
+    marginBottom: 16,
+  },
+  intentContextChip: {
+    alignSelf: 'flex-start' as const,
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: Colors.primary + '20',
+  },
+  intentContextText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.primaryDark,
+  },
+  // vC17: quantity stepper.
+  qtySection: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  qtyLabel: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.textPrimary,
+  },
+  qtyLabelMM: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    marginBottom: 12,
+  },
+  qtyStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 24,
+    marginBottom: 12,
+  },
+  qtyBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.primary + '30',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  qtyBtnDisabled: {
+    borderColor: Colors.border,
+    opacity: 0.5,
+  },
+  qtyValue: {
+    fontSize: 28,
+    fontWeight: '900' as const,
+    color: Colors.textPrimary,
+    minWidth: 40,
+    textAlign: 'center' as const,
+  },
+  qtyMath: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
   },
   brandOption: {
     flexGrow: 1,

@@ -31,6 +31,19 @@ const STRINGS = {
   track_order: { mm: 'ခြေရာခံရန်', en: 'Track Order' },
 
   // Order flow
+  // vC17 r2: intent-first flow — Refill/New Set cards are the first screen.
+  intent_title: { mm: 'ဘာလုပ်ချင်လဲ?', en: 'What do you need?' },
+  intent_refill_title: { mm: 'ပြန်ဖြည့်မယ်', en: 'Refill' },
+  intent_refill_desc: { mm: 'ရှိပြီးသား ဆလင်ဒါ ပြန်ဖြည့်ပါ', en: 'Refill your existing cylinder' },
+  intent_newset_title: { mm: 'အသစ်တပ်ဆင်', en: 'New Set' },
+  intent_newset_desc: { mm: 'ဆလင်ဒါအသစ် + ရီဂူလေတာ', en: 'New cylinder + regulator' },
+  intent_promotions_soon: { mm: 'ပရိုမိုးရှင်း လာမည်', en: 'Promotions coming' },
+  // vC17 r2: memory shortcut — "Your usual" card for repeat refill customers.
+  usual_card_title: { mm: 'သင့်အမြဲတမ်း', en: 'Your usual' },
+  order_again: { mm: 'ပြန်မှာယူပါ', en: 'Order again' },
+  usual_change: { mm: 'ပြောင်းမလား', en: 'Change' },
+  // vC17: quantity stepper
+  quantity: { mm: 'အရေအတွက်', en: 'Quantity' },
   select_brand: { mm: 'ဓာတ်ငွေ့အမှတ်တံဆိပ် ရွေးချယ်ပါ', en: 'Select Gas Brand' },
   select_size: { mm: 'ဆလင်ဒါအရွယ်အစား ရွေးချယ်ပါ', en: 'Select Cylinder Size' },
   order_type: { mm: 'မှာယူမှုအမျိုးအစား', en: 'Order Type' },

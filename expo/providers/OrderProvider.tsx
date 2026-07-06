@@ -42,6 +42,8 @@ interface SupabaseOrderRow {
   // vC14 Task B: cylinder_type is the real populated text column. The EF writes
   // the display name (e.g. "Refill", "New Cylinder") at order creation.
   cylinder_type: string | null;
+  // vC17: quantity is a real column on orders (the EF accepts quantity 1–10).
+  quantity: number | null;
   order_type: string;
   total_amount: number;
   gas_subtotal: number;
@@ -86,6 +88,8 @@ function mapSupabaseOrderToOrder(o: SupabaseOrderRow): Order {
     cylinderSize: o.cylinder_size,
     // vC14 Task B: cylinder_type is the real populated text column.
     cylinderType: o.cylinder_type ?? undefined,
+    // vC17: quantity from the real column; default to 1 for legacy rows.
+    quantity: o.quantity ?? 1,
     orderType: o.order_type as Order['orderType'],
     pricing: {
       gasPrice: o.gas_subtotal || 0,
@@ -236,6 +240,8 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
       // vC14 Task B: store the display name from the order params (cylinder_type
       // is the real column the EF writes at creation).
       cylinderType: orderParams.cylinderDisplayName ?? undefined,
+      // vC17: persist quantity so order cards/tracking can display it.
+      quantity: orderParams.quantity,
       orderType: orderParams.orderType as Order['orderType'],
       pricing: orderParams.pricing,
       address: orderParams.address,
@@ -282,6 +288,15 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     return orders[0] || null;
   }, [orders]);
 
+  // vC17 r2: memory shortcut — the "Your usual" card uses the last DELIVERED
+  // order (a completed refill the customer is likely to repeat). Falls back to
+  // the most recent order if none delivered yet, so first-time customers still
+  // get a prefill once they have any order history.
+  const getLastDeliveredOrder = useCallback(() => {
+    const delivered = orders.find(o => o.status === 'delivered');
+    return delivered || orders[0] || null;
+  }, [orders]);
+
   const getActiveOrder = useCallback(() => {
     // 4-stage contract: active = not yet delivered and not in a terminal state.
     // 'dispatched' is retained for backward-compat but is a dead stage in prod data.
@@ -302,6 +317,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     placeOrder,
     rateOrder,
     getLastOrder,
+    getLastDeliveredOrder,
     getActiveOrder,
     markNotificationRead,
     unreadCount,
