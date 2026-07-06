@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,21 +14,28 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Flame, Phone, ArrowRight, Shield } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
+import { useI18n } from '@/providers/I18nProvider';
 import { router } from 'expo-router';
+
+const LAST_PHONE_KEY = 'anygas_last_phone'; // vC15 Task B
 
 export default function LoginScreen() {
   const { sendOtp, verifyOtp } = useAuth();
+  const { t } = useI18n();
   const [phone, setPhone] = useState<string>('');
   const [otp, setOtp] = useState<string>('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  // vC15 Task B: welcome-back prefill state
+  const [prefilledPhone, setPrefilledPhone] = useState<string | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const logoScale = useRef(new Animated.Value(0.5)).current;
@@ -41,6 +48,32 @@ export default function LoginScreen() {
     ]).start();
   }, []);
 
+  // vC15 Task B: load the last-used phone number for welcome-back prefill.
+  // Stored on logout (AuthProvider) in display format (e.g. 095119900). Not a
+  // secret — AsyncStorage is appropriate. Clears on "Not you?" tap.
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(LAST_PHONE_KEY);
+        if (stored && stored.length >= 6) {
+          console.log('[Login] Welcome-back prefill loaded:', stored);
+          setPhone(stored);
+          setPrefilledPhone(stored);
+        }
+      } catch (e) {
+        console.log('[Login] Failed to load prefill phone:', e);
+      }
+    })();
+  }, []);
+
+  // vC15 Task B: "Not you?" clears the prefill and shows the empty form.
+  const handleNotYou = useCallback(() => {
+    console.log('[Login] Clearing prefill — user wants another number');
+    setPhone('');
+    setPrefilledPhone(null);
+    setErrorMsg('');
+  }, []);
+
   const handleSendOtp = useCallback(async () => {
     if (phone.length < 6) return;
     if (Platform.OS !== 'web') {
@@ -50,6 +83,12 @@ export default function LoginScreen() {
     setErrorMsg('');
     try {
       await sendOtp(phone);
+      // vC15 Task B: successful OTP send under a different number replaces
+      // the stored prefill value.
+      if (!prefilledPhone || prefilledPhone !== phone) {
+        await AsyncStorage.setItem(LAST_PHONE_KEY, phone);
+        setPrefilledPhone(phone);
+      }
       setStep('otp');
       console.log('[Login] OTP sent to:', phone);
     } catch (e: unknown) {
@@ -60,7 +99,7 @@ export default function LoginScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [phone, sendOtp]);
+  }, [phone, sendOtp, prefilledPhone]);
 
   const handleVerifyOtp = useCallback(async () => {
     if (otp.length < 4) return;
@@ -131,12 +170,16 @@ export default function LoginScreen() {
         >
           {step === 'phone' ? (
             <>
-              <Text style={styles.formTitle}>Welcome</Text>
+              <Text style={styles.formTitle}>
+                {prefilledPhone ? t('welcome_back') : 'Welcome'}
+              </Text>
               <Text style={styles.formSubtitle}>
-                Enter your phone number to get started
+                {prefilledPhone
+                  ? t('welcome_back_sub')
+                  : 'Enter your phone number to get started'}
               </Text>
               <Text style={styles.formSubtitleMM}>
-                ဖုန်းနံပါတ် ထည့်သွင်းပါ
+                {prefilledPhone ? 'OTP ပို့ရန် တစ်ချက်နှိပ်ပါ' : 'ဖုန်းနံပါတ် ထည့်သွင်းပါ'}
               </Text>
 
               <View style={styles.inputGroup}>
@@ -177,6 +220,17 @@ export default function LoginScreen() {
                   </>
                 )}
               </TouchableOpacity>
+
+              {/* vC15 Task B: "Not you?" link to clear the prefill */}
+              {prefilledPhone ? (
+                <TouchableOpacity
+                  style={styles.notYouLink}
+                  onPress={handleNotYou}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.notYouText}>{t('not_you')}</Text>
+                </TouchableOpacity>
+              ) : null}
             </>
           ) : (
             <>
@@ -402,5 +456,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textTertiary,
     textAlign: 'center',
+  },
+  // vC15 Task B: "Not you?" link
+  notYouLink: {
+    alignItems: 'center',
+    marginTop: 14,
+    paddingVertical: 8,
+  },
+  notYouText: {
+    fontSize: 13,
+    color: Colors.primary,
+    fontWeight: '600' as const,
   },
 });

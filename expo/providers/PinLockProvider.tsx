@@ -23,6 +23,8 @@ import createContextHook from '@nkzw/create-context-hook';
 const PIN_HASH_KEY = 'anygas_pin_hash';
 const PIN_SALT_KEY = 'anygas_pin_salt';
 const BIOMETRIC_PREF_KEY = 'anygas_biometric_unlock';
+const PIN_ATTEMPTS_KEY = 'anygas_pin_attempts'; // vC15 Task C: persisted attempt counter
+const LAST_PHONE_KEY = 'anygas_last_phone'; // vC15 Task B: welcome-back prefill (AsyncStorage, not SecureStore)
 const BACKGROUND_THRESHOLD_MS = 60_000; // lock after >60s in background
 const MAX_PIN_ATTEMPTS = 5;
 
@@ -80,9 +82,36 @@ async function clearPin(): Promise<void> {
     await SecureStore.deleteItemAsync(PIN_HASH_KEY);
     await SecureStore.deleteItemAsync(PIN_SALT_KEY);
     await SecureStore.deleteItemAsync(BIOMETRIC_PREF_KEY);
+    await clearStoredAttempts();
     console.log('[PinLock] PIN cleared');
   } catch (e) {
     console.log('[PinLock] clearPin error:', e);
+  }
+}
+
+/** vC15 Task C — Persisted wrong-attempt counter (survives app restart). */
+async function getStoredAttempts(): Promise<number> {
+  try {
+    const val = await SecureStore.getItemAsync(PIN_ATTEMPTS_KEY);
+    return val ? parseInt(val, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function setStoredAttempts(n: number): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PIN_ATTEMPTS_KEY, String(n));
+  } catch (e) {
+    console.log('[PinLock] setStoredAttempts error:', e);
+  }
+}
+
+async function clearStoredAttempts(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(PIN_ATTEMPTS_KEY);
+  } catch (e) {
+    console.log('[PinLock] clearStoredAttempts error:', e);
   }
 }
 
@@ -140,7 +169,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
   const [biometricAvailable, setBiometricAvailable] = useState<boolean>(false);
   const backgroundTimeRef = useRef<number | null>(null);
 
-  // Initialize: check if PIN is set, load biometric prefs
+  // Initialize: check if PIN is set, load biometric prefs, load persisted attempts
   const initialize = useCallback(async () => {
     console.log('[PinLock] Initializing...');
     const hasPin = await hasPinSet();
@@ -155,7 +184,10 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
 
     const bioPref = await getBiometricPref();
     setBiometricEnabled(bioPref);
-    console.log('[PinLock] PIN exists, biometric pref:', bioPref);
+    // vC15 Task C: restore persisted attempt counter so restart doesn't reset it
+    const storedAttempts = await getStoredAttempts();
+    setAttempts(storedAttempts);
+    console.log('[PinLock] PIN exists, biometric pref:', bioPref, 'stored attempts:', storedAttempts);
     setLockState('locked');
   }, []);
 
@@ -192,6 +224,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
     }
     try {
       await storePinHash(pin);
+      await clearStoredAttempts(); // vC15 Task C
       console.log('[PinLock] PIN set up successfully');
       setAttempts(0);
       setLockState('unlocked');
@@ -206,6 +239,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
    * Attempt to unlock with a PIN.
    * Returns { success, attemptsLeft, lockedOut }.
    * On 5 wrong attempts: clears PIN + triggers signOut callback.
+   * vC15 Task C: counter persisted in SecureStore — survives app restart.
    */
   const unlockWithPin = useCallback(async (
     pin: string,
@@ -215,13 +249,17 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
     if (valid) {
       console.log('[PinLock] PIN correct → unlocked');
       setAttempts(0);
+      await clearStoredAttempts();
       setLockState('unlocked');
       return { success: true, attemptsLeft: MAX_PIN_ATTEMPTS, lockedOut: false };
     }
 
-    const newAttempts = attempts + 1;
+    // vC15 Task C: read the persisted counter so a restart doesn't reset it.
+    const currentStored = await getStoredAttempts();
+    const newAttempts = currentStored + 1;
+    await setStoredAttempts(newAttempts);
     setAttempts(newAttempts);
-    console.log('[PinLock] Wrong PIN, attempt', newAttempts, 'of', MAX_PIN_ATTEMPTS);
+    console.log('[PinLock] Wrong PIN, attempt', newAttempts, 'of', MAX_PIN_ATTEMPTS, '(persisted)');
 
     if (newAttempts >= MAX_PIN_ATTEMPTS) {
       console.log('[PinLock] 5 wrong attempts → lockout: clear PIN + sign out');
@@ -239,7 +277,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
       attemptsLeft: MAX_PIN_ATTEMPTS - newAttempts,
       lockedOut: false,
     };
-  }, [attempts]);
+  }, []);
 
   /** Attempt biometric unlock. Returns true on success. */
   const unlockWithBiometric = useCallback(async (
@@ -250,6 +288,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
     if (success) {
       console.log('[PinLock] Biometric unlock success');
       setAttempts(0);
+      await clearStoredAttempts(); // vC15 Task C
       setLockState('unlocked');
     }
     return success;
@@ -275,20 +314,23 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
     await clearPin();
     setAttempts(0);
     setLockState('no_pin');
-  }, []);
+  }, []); // clearPin now also clears persisted attempts (vC15 Task C)
 
   /** Clear PIN on explicit sign-out (called from AuthProvider.logout). */
   const clearPinOnSignOut = useCallback(async (): Promise<void> => {
-    await clearPin();
+    await clearPin(); // vC15 Task C: also clears persisted attempts
     setAttempts(0);
     setBiometricEnabled(false);
     setLockState('no_pin');
   }, []);
 
-  /** Manually lock (e.g. from a settings screen in the future). */
+  /** Manually lock (e.g. from Profile "Lock app" button — vC15 Task A). */
   const lock = useCallback(() => {
     setLockState('locked');
     setAttempts(0);
+    // vC15 Task C: also clear persisted attempts on voluntary lock — a fresh
+    // unlock attempt should start at 0, not carry stale failures.
+    clearStoredAttempts();
   }, []);
 
   /** Re-run the initialization (e.g. after a new OTP login completes). */

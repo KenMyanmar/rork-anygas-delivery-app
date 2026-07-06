@@ -19,17 +19,32 @@ import {
   HelpCircle,
   FileText,
   Building2,
+  Lock,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useI18n } from '@/providers/I18nProvider';
+import { usePinLock } from '@/providers/PinLockProvider';
 
 export default function ProfileScreen() {
   const { activeCustomer, activeProfile, savedAddresses, phoneNumber, logout } = useAuth();
   const { t, tMM, isMM, isEN, changeLanguage } = useI18n();
+  const { lock } = usePinLock();
 
+  // vC15 Task A: "Lock app" is the prominent, free action — instant PIN screen,
+  // session untouched.
+  const handleLockApp = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    console.log('[Profile] Lock app requested');
+    lock();
+  }, [lock]);
+
+  // vC15 Task A: "Log out" demoted + gated behind a confirm dialog that steers
+  // users to the free Lock path instead. Logout still wipes session + PIN.
   const handleLogout = useCallback(() => {
     Alert.alert(
       t('log_out'),
@@ -37,6 +52,16 @@ export default function ProfileScreen() {
       [
         { text: t('cancel'), style: 'cancel' },
         {
+          // Primary: Lock app (free, no SMS)
+          text: t('lock_app'),
+          style: 'default',
+          onPress: () => {
+            console.log('[Profile] User chose Lock app over logout');
+            handleLockApp();
+          },
+        },
+        {
+          // Destructive: actually log out (costs 20 MMK OTP on return)
           text: t('log_out'),
           style: 'destructive',
           onPress: async () => {
@@ -47,7 +72,7 @@ export default function ProfileScreen() {
         },
       ]
     );
-  }, [logout, t]);
+  }, [logout, t, handleLockApp]);
 
   return (
     <ScrollView
@@ -162,13 +187,27 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* vC15 Task A — Lock app (prominent, free) */}
       <TouchableOpacity
-        style={styles.logoutButton}
+        style={styles.lockButton}
+        onPress={handleLockApp}
+        activeOpacity={0.7}
+      >
+        <Lock size={20} color={Colors.primary} />
+        <View style={styles.lockButtonTextWrap}>
+          <Text style={styles.lockButtonText}>{t('lock_app')}</Text>
+          <Text style={styles.lockButtonSub}>{t('lock_app_desc')}</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* vC15 Task A — Log out (demoted, text link) */}
+      <TouchableOpacity
+        style={styles.logoutLink}
         onPress={handleLogout}
         activeOpacity={0.7}
       >
-        <LogOut size={20} color={Colors.error} />
-        <Text style={styles.logoutText}>{t('log_out')}</Text>
+        <LogOut size={16} color={Colors.textTertiary} />
+        <Text style={styles.logoutLinkText}>{t('log_out_link')}</Text>
       </TouchableOpacity>
 
       <Text style={styles.version}>AnyGas 8484 v1.0.0</Text>
@@ -378,6 +417,46 @@ const styles = StyleSheet.create({
   langBtnTextActive: {
     color: '#FFFFFF',
   },
+  // vC15 Task A — Lock app button (prominent, primary color)
+  lockButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    padding: 16,
+    borderRadius: 14,
+    gap: 12,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primaryLight,
+  },
+  lockButtonTextWrap: {
+    flex: 1,
+  },
+  lockButtonText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  lockButtonSub: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    marginTop: 2,
+  },
+  // vC15 Task A — Log out demoted to text link
+  logoutLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 8,
+    marginBottom: 16,
+  },
+  logoutLinkText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: Colors.textTertiary,
+  },
+  // vC14 legacy logout button styles (removed in vC15, kept for reference)
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',

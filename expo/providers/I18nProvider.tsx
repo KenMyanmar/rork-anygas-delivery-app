@@ -134,8 +134,13 @@ const STRINGS = {
   no_saved_addresses: { mm: 'သိမ်းထားသောလိပ်စာ မရှိသေးပါ', en: 'No saved addresses yet' },
   default: { mm: 'ပုံသေ', en: 'Default' },
   log_out: { mm: 'ထွက်ရန်', en: 'Log Out' },
-  log_out_confirm: { mm: 'သင် ထွက်ရန် သေချာပါသလား?', en: 'Are you sure you want to log out?' },
+  log_out_confirm: { mm: 'သင် ထွက်လျှင် ပြန်လည် လော့ဂ်အင်ရန် SMS ကုဒ် အသစ်လိုပါမည်။ အက်ပ်ကို Lock လုပ်ခြင်းသာ အသုံးပြုပါ။', en: 'Logging out means you\'ll need a new SMS code to sign back in. Lock the app instead?' },
   cancel: { mm: 'မလုပ်တော့', en: 'Cancel' },
+
+  // vC15 Task A — Lock-first profile
+  lock_app: { mm: 'အက်ပ်လော့ခ် လုပ်ပါ', en: 'Lock App' },
+  lock_app_desc: { mm: 'လုံခြုံစွာ ထွက်ရန် — PIN ဖြင့် ပြန်ဖွင့်နိုင်ပါသည်', en: 'Lock securely — unlock with PIN' },
+  log_out_link: { mm: 'အကောင့်မှ ထွက်ရန်', en: 'Sign out of account' },
 
   // Order errors
   order_failed: { mm: 'မှာယူမှု မအောင်မြင်ပါ', en: 'Order Failed' },
@@ -165,6 +170,11 @@ const STRINGS = {
   pin_forgot_confirm: { mm: 'PIN ကို ပြန်သတ်မှတ်ရန် ထွက်ရန် လိုပါသည်။ ထွက်ပြီး ပြန်လည် လော့ဂ်အင် ပါမည်။ ဆက်လုပ်မလား?', en: 'Resetting your PIN requires signing out and logging in again. Continue?' },
   // Misc
   pin_continue: { mm: 'ဆက်လုပ်ပါ', en: 'Continue' },
+
+  // vC15 Task B — Welcome-back prefill
+  welcome_back: { mm: 'ပြန်လည် ကြိုဆိုပါတယ်', en: 'Welcome back' },
+  welcome_back_sub: { mm: 'OTP ပို့ရန် တစ်ချက်နှိပ်ပါ', en: 'One tap to send OTP' },
+  not_you: { mm: 'သင်မဟုတ်ဘူးလား? အခြားနံပါတ်သုံးပါ', en: 'Not you? Use another number' },
 } as const;
 
 export type StringKey = keyof typeof STRINGS;

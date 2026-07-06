@@ -8,6 +8,7 @@ import { usePinLock } from '@/providers/PinLockProvider';
 
 const ACTIVE_CUSTOMER_KEY = 'anygas_active_customer';
 const ADDRESSES_KEY = 'anygas_addresses';
+const LAST_PHONE_KEY = 'anygas_last_phone'; // vC15 Task B: welcome-back prefill (display format, not a secret)
 
 function authPhoneToLocalPhone(authPhone: string): string {
   let cleaned = authPhone.replace(/\s/g, '');
@@ -309,6 +310,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const logout = useCallback(async () => {
     console.log('[Auth] Logging out');
+    // vC15 Task B: persist the phone number (display format) for welcome-back
+    // prefill on the login screen. Not a secret — AsyncStorage is fine here.
+    const phoneForPrefill = activeCustomer?.phone || phoneNumber || '';
+    if (phoneForPrefill) {
+      await AsyncStorage.setItem(LAST_PHONE_KEY, phoneForPrefill);
+      console.log('[Auth] Stored last phone for prefill:', phoneForPrefill);
+    }
     // vC14 Task A: clear PIN hash on sign-out so re-login requires fresh setup.
     // The PIN lock is purely local; clearing it here ensures a clean state.
     await clearPinOnSignOut();
@@ -325,7 +333,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     await AsyncStorage.removeItem(ACTIVE_CUSTOMER_KEY);
     await AsyncStorage.removeItem(ADDRESSES_KEY);
     queryClient.clear();
-  }, [queryClient, clearPinOnSignOut]);
+  }, [queryClient, clearPinOnSignOut, activeCustomer, phoneNumber]);
 
   const addAddress = useCallback(async (address: Omit<SavedAddress, 'id'>) => {
     const newAddress: SavedAddress = { ...address, id: `addr_${Date.now()}` };
@@ -408,5 +416,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     addAddress,
     getDefaultAddress,
     updateCustomerAddress,
+    // vC15 Task B: expose the last-phone keys for the login screen
+    LAST_PHONE_KEY,
   };
 });
