@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Animated,
+  Animated as RNAnimated,
   Platform,
   ActivityIndicator,
   Linking,
@@ -39,6 +39,20 @@ import {
 import { Image } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+  FadeIn,
+  FadeOut,
+  SlideInRight,
+  SlideInLeft,
+  SlideOutLeft,
+  SlideOutRight,
+  FadeInDown,
+} from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useOrders } from '@/providers/OrderProvider';
@@ -57,6 +71,16 @@ import {
 import { fetchCatalog, displayBrandName, CatalogEntry } from '@/lib/catalog';
 import { fetchEquipmentBundles, bundleBrandLabel, computeComponentValue } from '@/lib/bundles';
 import { useI18n } from '@/providers/I18nProvider';
+import {
+  ScalePressable,
+  Skeleton,
+  SPRING,
+  DURATION,
+  EASE_OUT,
+  useReduceMotion,
+  AnimatedNumber,
+} from '@/lib/motion';
+import { SuccessOverlay } from '@/components/SuccessOverlay';
 
 // Derived from catalog-list response — single source of truth.
 interface CatalogBrand {
@@ -183,7 +207,13 @@ export default function OrderScreen() {
   const [townshipPickerOpen, setTownshipPickerOpen] = useState<boolean>(false);
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new RNAnimated.Value(0)).current;
+  // vD-MOTION: step direction for directional transitions (moment 2).
+  const stepDirection = useRef<'forward' | 'back'>('forward');
+  // vD-MOTION: order-placed celebration (moment 4).
+  const [showSuccess, setShowSuccess] = useState<boolean>(false);
+  const [successSummary, setSuccessSummary] = useState<string>('');
+  const [successTotal, setSuccessTotal] = useState<string>('');
 
   // NS-2: selected equipment bundle (New Set path). When set, the confirm
   // screen shows the bundle name and placeBundleOrder is used instead of
@@ -308,7 +338,7 @@ export default function OrderScreen() {
 
   const animateTransition = useCallback(() => {
     slideAnim.setValue(30);
-    Animated.spring(slideAnim, { toValue: 0, tension: 80, friction: 12, useNativeDriver: true }).start();
+    RNAnimated.spring(slideAnim, { toValue: 0, tension: 80, friction: 12, useNativeDriver: true }).start();
   }, [slideAnim]);
 
   const goNext = useCallback(() => {
@@ -317,6 +347,7 @@ export default function OrderScreen() {
       if (Platform.OS !== 'web') {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
+      stepDirection.current = 'forward';
       setCurrentStep(steps[idx + 1]);
       animateTransition();
     }
@@ -338,6 +369,7 @@ export default function OrderScreen() {
     setSelectedCylinder(null);
     setQuantity(1);
     setSelectedBundle(null);
+    stepDirection.current = 'forward';
     if (intent === 'new_setup') {
       // NS-2: New Set goes straight to the bundle showcase (no brand step).
       setCurrentStep('bundles');
@@ -370,6 +402,7 @@ export default function OrderScreen() {
     setSelectedBrandId(usualBrandId);
     setSelectedType(usualOrderType);
     setQuantity(usualQuantity);
+    stepDirection.current = 'forward';
     setCurrentStep('pricing');
     animateTransition();
   }, [hasUsual, usualCatalogEntry, usualCylinderSize, usualBrandId, usualOrderType, usualQuantity, animateTransition]);
@@ -398,6 +431,7 @@ export default function OrderScreen() {
     if (currentStep === 'address' && customerHasAddress && !editingAddress) {
       setShowAddressStep(false);
       setEditingAddress(false);
+      stepDirection.current = 'back';
       setCurrentStep('pricing');
       animateTransition();
       return;
@@ -411,6 +445,7 @@ export default function OrderScreen() {
     }
     const idx = steps.indexOf(currentStep);
     if (idx > 0) {
+      stepDirection.current = 'back';
       setCurrentStep(steps[idx - 1]);
       animateTransition();
     } else {
@@ -465,10 +500,10 @@ export default function OrderScreen() {
           paymentMethod: selectedPayment,
           address: selectedAddress,
         });
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        router.replace('/(tabs)/(home)/tracking');
+        // vD-MOTION moment 4: fire the celebration, then navigate on dismiss.
+        setSuccessSummary(selectedBundle.name);
+        setSuccessTotal(`${formatPrice(selectedBundle.bundle_price)} MMK`);
+        setShowSuccess(true);
         return;
       }
       // Refill path — existing flow.
@@ -488,10 +523,11 @@ export default function OrderScreen() {
         address: selectedAddress,
         pricing: pricingData,
       });
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-      router.replace('/(tabs)/(home)/tracking');
+      // vD-MOTION moment 4: fire the celebration, then navigate on dismiss.
+      const sumQty = quantity > 1 ? `${quantity}× ` : '';
+      setSuccessSummary(`${sumQty}${selectedBrand?.name || 'Gas'} ${selectedCylinder.size}kg`);
+      setSuccessTotal(`${formatPrice(pricingData.total)} MMK`);
+      setShowSuccess(true);
     } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : t('order_failed');
       console.log('[Order] Error placing order:', errorMessage);
@@ -520,6 +556,12 @@ export default function OrderScreen() {
     }
   }, [selectedBrandId, selectedBrand, selectedCylinder, selectedType, selectedBundle, selectedAddress, selectedPayment, customerId, quantity, calculatePricing, placeOrder, placeBundleOrder, t, isMM, bundlesQuery, animateTransition]);
 
+  // vD-MOTION moment 4: when the success overlay dismisses, navigate to tracking.
+  const handleSuccessDone = useCallback(() => {
+    setShowSuccess(false);
+    router.replace('/(tabs)/(home)/tracking');
+  }, []);
+
   const pricing = calculatePricing();
 
   const renderStepContent = () => {
@@ -546,32 +588,29 @@ export default function OrderScreen() {
                   <Text style={styles.usualPrice}>{formatPrice(usualTotal)} MMK</Text>
                 )}
                 <View style={styles.usualActions}>
-                  <TouchableOpacity
+                  <ScalePressable
                     style={styles.usualOrderBtn}
                     onPress={handleOrderAgain}
-                    activeOpacity={0.85}
                     testID="usual-order-again"
                   >
                     <Flame size={16} color="#FFFFFF" />
                     <Text style={styles.usualOrderBtnText}>{t('order_again')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                  </ScalePressable>
+                  <ScalePressable
                     style={styles.usualChangeBtn}
                     onPress={() => handleSelectIntent('refill')}
-                    activeOpacity={0.7}
                   >
                     <Text style={styles.usualChangeBtnText}>{t('usual_change')}</Text>
-                  </TouchableOpacity>
+                  </ScalePressable>
                 </View>
               </View>
             )}
 
             <View style={styles.intentGrid}>
               {/* Refill — the default highway (94.9% of orders). */}
-              <TouchableOpacity
+              <ScalePressable
                 style={styles.intentCard}
                 onPress={() => handleSelectIntent('refill')}
-                activeOpacity={0.8}
                 testID="intent-refill"
               >
                 <View style={[styles.intentIconWrap, styles.intentIconRefill]}>
@@ -580,18 +619,17 @@ export default function OrderScreen() {
                 <Text style={styles.intentTitleMM}>{tMM('intent_refill_title')}</Text>
                 <Text style={styles.intentTitle}>{t('intent_refill_title')}</Text>
                 <Text style={styles.intentDesc}>{t('intent_refill_desc')}</Text>
-              </TouchableOpacity>
+              </ScalePressable>
 
               {/* New Set — cylinder + regulator. NS-2: when no visible bundles
                   exist, the card shows a disabled "promotions coming" state and
                   does not navigate. Brand is baked into each bundle, never a step. */}
-              <TouchableOpacity
+              <ScalePressable
                 style={[
                   styles.intentCard,
                   !hasVisibleBundles && styles.intentCardDisabled,
                 ]}
                 onPress={() => hasVisibleBundles && handleSelectIntent('new_setup')}
-                activeOpacity={0.8}
                 disabled={!hasVisibleBundles}
                 testID="intent-newset"
               >
@@ -614,7 +652,7 @@ export default function OrderScreen() {
                       : t('intent_promotions_soon')}
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </ScalePressable>
             </View>
           </View>
         );
@@ -629,9 +667,20 @@ export default function OrderScreen() {
             <Text style={styles.stepTitleMM}>{tMM('bundles_title')}</Text>
             <Text style={styles.bundlesSub}>{t('bundles_sub')}</Text>
             {bundlesQuery.isLoading ? (
-              <View style={styles.loadingWrap}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-                <Text style={styles.loadingText}>{isMM ? 'ပက်ကေ့ဂျ်များ ရှာနေသည်...' : 'Loading packages...'}</Text>
+              <View style={styles.bundlesList}>
+                {[1, 2].map((i) => (
+                  <View key={i} style={styles.bundleCard}>
+                    <View style={styles.bundleCardTop}>
+                      <Skeleton width={80} height={80} borderRadius={12} />
+                      <View style={{ flex: 1, gap: 6 }}>
+                        <Skeleton width={120} height={18} />
+                        <Skeleton width={80} height={12} />
+                      </View>
+                    </View>
+                    <Skeleton width="100%" height={60} borderRadius={12} style={{ marginBottom: 14 }} />
+                    <Skeleton width={100} height={22} />
+                  </View>
+                ))}
               </View>
             ) : bundlesQuery.isError ? (
               <View style={styles.errorWrap}>
@@ -658,13 +707,13 @@ export default function OrderScreen() {
               </View>
             ) : (
               <View style={styles.bundlesList}>
-                {visibleBundles.map((bundle) => {
+                {visibleBundles.map((bundle, bundleIdx) => {
                   const componentValue = computeComponentValue(bundle);
                   const savings = componentValue > bundle.bundle_price ? componentValue - bundle.bundle_price : 0;
                   const brandLabel = bundleBrandLabel(bundle);
                   const isSelected = selectedBundle?.id === bundle.id;
                   return (
-                    <TouchableOpacity
+                    <ScalePressable
                       key={bundle.id}
                       style={[
                         styles.bundleCard,
@@ -676,8 +725,8 @@ export default function OrderScreen() {
                         }
                         setSelectedBundle(bundle);
                       }}
-                      activeOpacity={0.7}
                       testID={`bundle-card-${bundle.id}`}
+                      entering={FadeInDown.delay(Math.min(bundleIdx, 6) * 40).springify().damping(18).stiffness(180)}
                     >
                       <View style={styles.bundleCardTop}>
                         {bundle.image_url ? (
@@ -775,7 +824,7 @@ export default function OrderScreen() {
                           <Check size={16} color="#FFFFFF" />
                         </View>
                       )}
-                    </TouchableOpacity>
+                    </ScalePressable>
                   );
                 })}
               </View>
@@ -797,9 +846,13 @@ export default function OrderScreen() {
               </View>
             </View>
             {catalogQuery.isLoading ? (
-              <View style={styles.loadingWrap}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-                <Text style={styles.loadingText}>{t('loading_brands')}</Text>
+              <View style={styles.optionsGrid}>
+                {[1, 2, 3, 4].map((i) => (
+                  <View key={i} style={styles.brandOption}>
+                    <Skeleton width={72} height={72} borderRadius={16} style={{ marginBottom: 12 }} />
+                    <Skeleton width={60} height={14} />
+                  </View>
+                ))}
               </View>
             ) : catalogQuery.isError ? (
               <View style={styles.errorWrap}>
@@ -815,11 +868,11 @@ export default function OrderScreen() {
               <View style={styles.optionsGrid}>
                 {/* vC17 r2: filter brands by intent. New Set shows only
                     allow_new_setup brands; Refill shows all. */}
-                {brands.filter(b => selectedType !== 'new_setup' || b.allow_new_setup).map((brand) => {
+                {brands.filter(b => selectedType !== 'new_setup' || b.allow_new_setup).map((brand, brandIdx) => {
                   const color = getBrandColor(brand.name);
                   const displayName = displayBrandName(brand.name);
                   return (
-                    <TouchableOpacity
+                    <ScalePressable
                       key={brand.id}
                       style={[
                         styles.brandOption,
@@ -829,7 +882,7 @@ export default function OrderScreen() {
                         setSelectedBrandId(brand.id);
                         setSelectedCylinder(null);
                       }}
-                      activeOpacity={0.7}
+                      entering={FadeInDown.delay(Math.min(brandIdx, 6) * 40).springify().damping(18).stiffness(180)}
                     >
                       {brand.logo_url ? (
                         <Image
@@ -848,7 +901,7 @@ export default function OrderScreen() {
                           <Check size={14} color="#FFF" />
                         </View>
                       )}
-                    </TouchableOpacity>
+                    </ScalePressable>
                   );
                 })}
               </View>
@@ -863,9 +916,14 @@ export default function OrderScreen() {
             <Text style={styles.stepTitle}>{t('select_size')}</Text>
             <Text style={styles.stepTitleMM}>{tMM('select_size')}</Text>
             {cylindersLoading ? (
-              <View style={styles.loadingWrap}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-                <Text style={styles.loadingText}>{t('loading_sizes')}</Text>
+              <View style={styles.sizeGrid}>
+                {[1, 2].map((i) => (
+                  <View key={i} style={styles.sizeOption}>
+                    <Skeleton width={56} height={56} borderRadius={12} style={{ marginBottom: 8 }} />
+                    <Skeleton width={40} height={32} style={{ marginBottom: 4 }} />
+                    <Skeleton width={50} height={12} />
+                  </View>
+                ))}
               </View>
             ) : cylindersError ? (
               <View style={styles.errorWrap}>
@@ -884,17 +942,17 @@ export default function OrderScreen() {
             ) : (
               <>
                 <View style={styles.sizeGrid}>
-                  {cylinderOptions.map((cyl) => {
+                  {cylinderOptions.map((cyl, cylIdx) => {
                     const isSelected = selectedCylinder?.id === cyl.id;
                     return (
-                      <TouchableOpacity
+                      <ScalePressable
                         key={cyl.id}
                         style={[
                           styles.sizeOption,
                           isSelected && styles.sizeOptionSelected,
                         ]}
                         onPress={() => setSelectedCylinder(cyl)}
-                        activeOpacity={0.7}
+                        entering={FadeInDown.delay(Math.min(cylIdx, 6) * 40).springify().damping(18).stiffness(180)}
                       >
                         {cyl.imageUrl ? (
                           <Image
@@ -917,7 +975,7 @@ export default function OrderScreen() {
                         <Text style={[styles.sizePrice, isSelected && styles.sizePriceSelected]}>
                           {formatPrice(cyl.gasPrice)} MMK
                         </Text>
-                      </TouchableOpacity>
+                      </ScalePressable>
                     );
                   })}
                 </View>
@@ -928,25 +986,23 @@ export default function OrderScreen() {
                     <Text style={styles.qtyLabel}>{t('quantity')}</Text>
                     <Text style={styles.qtyLabelMM}>{tMM('quantity')}</Text>
                     <View style={styles.qtyStepper}>
-                      <TouchableOpacity
+                      <ScalePressable
                         style={[styles.qtyBtn, quantity <= MIN_QUANTITY && styles.qtyBtnDisabled]}
                         onPress={decrementQty}
                         disabled={quantity <= MIN_QUANTITY}
-                        activeOpacity={0.7}
                         testID="qty-minus"
                       >
                         <Minus size={22} color={quantity <= MIN_QUANTITY ? Colors.textTertiary : Colors.primary} />
-                      </TouchableOpacity>
+                      </ScalePressable>
                       <Text style={styles.qtyValue}>{quantity}</Text>
-                      <TouchableOpacity
+                      <ScalePressable
                         style={[styles.qtyBtn, quantity >= MAX_QUANTITY && styles.qtyBtnDisabled]}
                         onPress={incrementQty}
                         disabled={quantity >= MAX_QUANTITY}
-                        activeOpacity={0.7}
                         testID="qty-plus"
                       >
                         <Plus size={22} color={quantity >= MAX_QUANTITY ? Colors.textTertiary : Colors.primary} />
-                      </TouchableOpacity>
+                      </ScalePressable>
                     </View>
                     {/* vC17: live math preview — 2 × 23,000 = 46,000. */}
                     <Text style={styles.qtyMath}>
@@ -1009,7 +1065,10 @@ export default function OrderScreen() {
               <View style={styles.pricingDivider} />
               <View style={styles.pricingRow}>
                 <Text style={styles.pricingTotal}>{t('total')}</Text>
-                <Text style={styles.pricingTotalValue}>{formatPrice(pricing.total)} MMK</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                  <AnimatedNumber value={pricing.total} format={(n) => Math.round(n).toLocaleString()} style={styles.pricingTotalValue} />
+                  <Text style={styles.pricingTotalValue}> MMK</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -1025,10 +1084,9 @@ export default function OrderScreen() {
               <Text style={styles.stepTitle}>{t('delivery_address')}</Text>
               <Text style={styles.stepTitleMM}>{tMM('delivery_address')}</Text>
               {customerAddress && (
-                <TouchableOpacity
+                <ScalePressable
                   style={[styles.addressOption, styles.addressOptionSelected]}
                   onPress={() => setSelectedAddress(customerAddress)}
-                  activeOpacity={0.7}
                 >
                   <MapPin size={20} color={Colors.primary} />
                   <View style={styles.addressOptionContent}>
@@ -1038,9 +1096,9 @@ export default function OrderScreen() {
                     <Text style={styles.addressOptionText} numberOfLines={2}>{customerAddress.address}</Text>
                   </View>
                   <Check size={18} color={Colors.primary} />
-                </TouchableOpacity>
+                </ScalePressable>
               )}
-              <TouchableOpacity
+              <ScalePressable
                 style={styles.editAddressBtn}
                 onPress={() => {
                   setPendingAddress(activeCustomer?.address || '');
@@ -1049,10 +1107,9 @@ export default function OrderScreen() {
                   setAddressSaveError(null);
                   animateTransition();
                 }}
-                activeOpacity={0.7}
               >
                 <Text style={styles.editAddressBtnText}>{t('change')}</Text>
-              </TouchableOpacity>
+              </ScalePressable>
             </View>
           );
         }
@@ -1145,7 +1202,7 @@ export default function OrderScreen() {
             </View>
 
             {/* vC16 Task B: "Use my location" GPS capture (optional, never required) */}
-            <TouchableOpacity
+            <ScalePressable
               style={[
                 styles.locationBtn,
                 locationStatus === 'saved' && styles.locationBtnSaved,
@@ -1153,7 +1210,6 @@ export default function OrderScreen() {
               ]}
               onPress={handleUseLocation}
               disabled={locationStatus === 'loading'}
-              activeOpacity={0.7}
               testID="gate-use-location"
             >
               {locationStatus === 'loading' ? (
@@ -1175,7 +1231,7 @@ export default function OrderScreen() {
                   ? t('location_saved')
                   : t('use_my_location')}
               </Text>
-            </TouchableOpacity>
+            </ScalePressable>
             {locationStatus === 'denied' && (
               <Text style={styles.locationDeniedText}>{t('location_denied')}</Text>
             )}
@@ -1216,20 +1272,25 @@ export default function OrderScreen() {
             <Text style={styles.stepTitle}>{t('payment_method')}</Text>
             <Text style={styles.stepTitleMM}>{tMM('payment_method')}</Text>
             <View style={styles.paymentList}>
-              {PAYMENT_OPTIONS.map((opt) => {
+              {PAYMENT_OPTIONS.map((opt, payIdx) => {
                 const label = opt.id === 'cash' ? t('pay_cash')
                   : opt.id === 'kbz_pay' ? t('pay_kbz')
                   : opt.id === 'wave_money' ? t('pay_wave')
                   : t('pay_cb');
                 return (
-                  <TouchableOpacity
+                  <ScalePressable
                     key={opt.id}
                     style={[
                       styles.paymentOption,
                       selectedPayment === opt.id && styles.paymentOptionSelected,
                     ]}
-                    onPress={() => setSelectedPayment(opt.id)}
-                    activeOpacity={0.7}
+                    onPress={() => {
+                      setSelectedPayment(opt.id);
+                      if (Platform.OS !== 'web') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                    }}
+                    entering={FadeInDown.delay(Math.min(payIdx, 6) * 40).springify().damping(18).stiffness(180)}
                   >
                     <View style={[styles.paymentIconWrap, { backgroundColor: opt.color + '15' }]}>
                       {getPaymentIcon(opt.icon, opt.color)}
@@ -1240,7 +1301,7 @@ export default function OrderScreen() {
                     {selectedPayment === opt.id && (
                       <Check size={18} color={Colors.primary} />
                     )}
-                  </TouchableOpacity>
+                  </ScalePressable>
                 );
               })}
             </View>
@@ -1455,15 +1516,15 @@ export default function OrderScreen() {
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={goBack} style={styles.backBtn} activeOpacity={0.7}>
+          <ScalePressable onPress={goBack} style={styles.backBtn}>
             {currentStepIndex === 0 ? <X size={22} color={Colors.textPrimary} /> : <ChevronLeft size={22} color={Colors.textPrimary} />}
-          </TouchableOpacity>
+          </ScalePressable>
           {/* vD1: single progress indicator — animated bar only (dots removed) */}
           <Text style={styles.stepLabel}>{STEP_LABELS[currentStep]}</Text>
         </View>
 
         <View style={styles.progressBar}>
-          <Animated.View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+          <ReanimatedProgressFill progress={progress} />
         </View>
 
         <ScrollView
@@ -1471,22 +1532,21 @@ export default function OrderScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View style={{ transform: [{ translateY: slideAnim }] }}>
+          <RNAnimated.View style={{ transform: [{ translateY: slideAnim }] }}>
             {renderStepContent()}
-          </Animated.View>
+          </RNAnimated.View>
         </ScrollView>
 
         {/* vC17 r2: intent step — cards drive navigation, no Continue button. */}
         {currentStep !== 'intent' && (
-        <View style={styles.bottomBar}>
+        <BottomBar>
           {currentStep === 'address' && (editingAddress || !customerHasAddress) ? (
             // vC13 Task B: address gate — Save button drives the form submit.
             // Blocks checkout until a valid address is saved. Visible error on fail.
-            <TouchableOpacity
+            <ScalePressable
               style={[styles.nextButton, isSavingAddress && styles.buttonDisabled]}
               onPress={handleSaveAddress}
               disabled={isSavingAddress}
-              activeOpacity={0.85}
               testID="save-address-button"
             >
               {isSavingAddress ? (
@@ -1494,13 +1554,12 @@ export default function OrderScreen() {
               ) : (
                 <Text style={styles.nextButtonText}>{t('save_and_continue')}</Text>
               )}
-            </TouchableOpacity>
+            </ScalePressable>
           ) : currentStep === 'confirm' ? (
-            <TouchableOpacity
+            <ScalePressable
               style={[styles.confirmButton, isSubmitting && styles.buttonDisabled]}
               onPress={handleConfirmOrder}
               disabled={isSubmitting}
-              activeOpacity={0.85}
               testID="confirm-order-button"
             >
               {isSubmitting ? (
@@ -1511,21 +1570,71 @@ export default function OrderScreen() {
                   <Text style={styles.confirmButtonText}>{t('place_order')} • {formatPrice(selectedType === 'new_setup' && selectedBundle ? selectedBundle.bundle_price : pricing.total)} MMK</Text>
                 </>
               )}
-            </TouchableOpacity>
+            </ScalePressable>
           ) : (
-            <TouchableOpacity
+            <ScalePressable
               style={[styles.nextButton, !canProceed() && styles.buttonDisabled]}
               onPress={goNext}
               disabled={!canProceed()}
-              activeOpacity={0.85}
             >
               <Text style={styles.nextButtonText}>{t('continue')}</Text>
-            </TouchableOpacity>
+            </ScalePressable>
           )}
-        </View>
+        </BottomBar>
         )}
       </SafeAreaView>
+      {/* vD-MOTION moment 4: the order-placed celebration overlay. */}
+      <SuccessOverlay
+        visible={showSuccess}
+        totalLabel={successTotal}
+        orderSummary={successSummary}
+        onDone={handleSuccessDone}
+      />
     </View>
+  );
+}
+
+/**
+ * vD-MOTION moment 2: progress bar fill animates with a spring on step change.
+ * Falls back to instant width under reduce-motion.
+ */
+function ReanimatedProgressFill({ progress }: { progress: number }) {
+  const reduce = useReduceMotion();
+  const width = useSharedValue(progress * 100);
+  useEffect(() => {
+    if (reduce) {
+      width.value = progress * 100;
+    } else {
+      width.value = withSpring(progress * 100, { damping: 18, stiffness: 180, mass: 1 });
+    }
+  }, [progress, reduce]);
+  const style = useAnimatedStyle(() => ({
+    width: `${width.value}%`,
+  }));
+  return <Animated.View style={[styles.progressFill, style]} />;
+}
+
+/**
+ * vD-MOTION moment 8: bottom bar slides up with a spring when a step becomes
+ * valid. Falls back to instant under reduce-motion.
+ */
+function BottomBar({ children }: { children: React.ReactNode }) {
+  const reduce = useReduceMotion();
+  const y = useSharedValue(reduce ? 0 : 20);
+  const opacity = useSharedValue(reduce ? 1 : 0);
+  useEffect(() => {
+    if (reduce) return;
+    y.value = withSpring(0, SPRING.gentle);
+    opacity.value = withSpring(1, { damping: 20, stiffness: 200 });
+  }, [reduce]);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateY: y.value }],
+    opacity: opacity.value,
+  }));
+  return (
+    <Animated.View style={[styles.bottomBar, style]}>
+      {children}
+    </Animated.View>
   );
 }
 

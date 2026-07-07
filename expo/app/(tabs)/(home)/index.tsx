@@ -5,7 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Animated,
+  Animated as RNAnimated,
   Platform,
   ActivityIndicator,
   Image,
@@ -16,12 +16,14 @@ import { Flame, MapPin, ChevronRight, Package, Truck, RefreshCw } from 'lucide-r
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useOrders } from '@/providers/OrderProvider';
 import { OrderStatus } from '@/types';
 import { fetchCatalog, displayBrandName } from '@/lib/catalog';
 import { useI18n } from '@/providers/I18nProvider';
+import { ScalePressable, Skeleton, useReduceMotion } from '@/lib/motion';
 
 interface SupabaseBrand {
   id: string;
@@ -73,8 +75,8 @@ export default function HomeScreen() {
   const { activeCustomer, activeProfile, getDefaultAddress } = useAuth();
   const { getLastOrder, getActiveOrder } = useOrders();
   const { t, tMM, isMM } = useI18n();
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new RNAnimated.Value(1)).current;
+  const fadeAnim = useRef(new RNAnimated.Value(0)).current;
 
   const defaultAddress = getDefaultAddress();
   const lastOrder = getLastOrder();
@@ -95,11 +97,11 @@ export default function HomeScreen() {
   }, [brandsQuery.data]);
 
   useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.04, duration: 1500, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
+    RNAnimated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+    const pulse = RNAnimated.loop(
+      RNAnimated.sequence([
+        RNAnimated.timing(pulseAnim, { toValue: 1.04, duration: 1500, useNativeDriver: true }),
+        RNAnimated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
       ])
     );
     pulse.start();
@@ -142,7 +144,7 @@ export default function HomeScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View style={{ opacity: fadeAnim }}>
+          <RNAnimated.View style={{ opacity: fadeAnim }}>
             <View style={styles.header}>
               <View style={styles.headerLeft}>
                 <View style={styles.logoRow}>
@@ -171,10 +173,10 @@ export default function HomeScreen() {
             )}
 
             {activeOrder && (
-              <TouchableOpacity
+              <Animated.View entering={FadeInDown.springify().damping(18).stiffness(180)}>
+              <ScalePressable
                 style={styles.activeOrderCard}
                 onPress={handleTrackOrder}
-                activeOpacity={0.8}
               >
                 <View style={styles.activeOrderHeader}>
                   <Truck size={18} color={Colors.primary} />
@@ -200,15 +202,16 @@ export default function HomeScreen() {
                   <Text style={styles.trackButtonText}>{t('track_order')}</Text>
                   <ChevronRight size={16} color={Colors.primary} />
                 </View>
-              </TouchableOpacity>
+              </ScalePressable>
+              </Animated.View>
             )}
 
-            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-              <TouchableOpacity
+            <RNAnimated.View style={{ transform: [{ scale: pulseAnim }] }}>
+              <ScalePressable
                 style={styles.heroButton}
                 onPress={handleOrderNow}
-                activeOpacity={0.85}
                 testID="order-gas-button"
+                pressScale={0.98}
               >
                 <View style={styles.heroIconWrap}>
                   <Flame size={36} color="#FFFFFF" strokeWidth={2} />
@@ -216,17 +219,16 @@ export default function HomeScreen() {
                 <Text style={styles.heroTitle}>{isMM ? 'အခုပဲ မှာယူပါ' : 'ORDER GAS NOW'}</Text>
                 <Text style={styles.heroTitleMM}>{tMM('order_gas_now')}</Text>
                 <Text style={styles.heroSubtitle}>{t('fast_delivery')}</Text>
-              </TouchableOpacity>
-            </Animated.View>
+              </ScalePressable>
+            </RNAnimated.View>
 
             {lastOrder && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{t('quick_reorder')}</Text>
                 <Text style={styles.sectionTitleMM}>{tMM('quick_reorder')}</Text>
-                <TouchableOpacity
+                <ScalePressable
                   style={styles.reorderCard}
                   onPress={handleReorder}
-                  activeOpacity={0.8}
                   testID="reorder-button"
                 >
                   <View style={styles.reorderLeft}>
@@ -251,7 +253,7 @@ export default function HomeScreen() {
                     <RefreshCw size={18} color={Colors.primary} />
                     <Text style={styles.reorderButtonText}>{t('quick_reorder')}</Text>
                   </View>
-                </TouchableOpacity>
+                </ScalePressable>
               </View>
             )}
 
@@ -259,20 +261,25 @@ export default function HomeScreen() {
               <Text style={styles.sectionTitle}>{t('our_brands')}</Text>
               <Text style={styles.sectionTitleMM}>{tMM('our_brands')}</Text>
               {brandsQuery.isLoading ? (
-                <View style={styles.brandsLoading}>
-                  <ActivityIndicator size="small" color={Colors.primary} />
+                <View style={styles.brandsRow}>
+                  {[1, 2, 3].map((i) => (
+                    <View key={i} style={styles.brandCard}>
+                      <Skeleton width={48} height={48} borderRadius={12} style={{ marginBottom: 10 }} />
+                      <Skeleton width={50} height={12} />
+                    </View>
+                  ))}
                 </View>
               ) : (
                 <View style={styles.brandsRow}>
-                  {brands.map((brand) => {
+                  {brands.map((brand, brandIdx) => {
                     const color = getBrandColor(brand.name);
                     const displayName = displayBrandName(brand.name);
                     return (
-                      <TouchableOpacity
+                      <ScalePressable
                         key={brand.id}
                         style={styles.brandCard}
                         onPress={handleOrderNow}
-                        activeOpacity={0.7}
+                        entering={FadeInDown.delay(Math.min(brandIdx, 6) * 40).springify().damping(18).stiffness(180)}
                       >
                         {brand.logo_url ? (
                           <Image
@@ -286,7 +293,7 @@ export default function HomeScreen() {
                           </View>
                         )}
                         <Text style={styles.brandName}>{displayName}</Text>
-                      </TouchableOpacity>
+                      </ScalePressable>
                     );
                   })}
                 </View>
@@ -294,7 +301,7 @@ export default function HomeScreen() {
             </View>
 
             <View style={{ height: 30 }} />
-          </Animated.View>
+          </RNAnimated.View>
         </ScrollView>
       </SafeAreaView>
     </View>

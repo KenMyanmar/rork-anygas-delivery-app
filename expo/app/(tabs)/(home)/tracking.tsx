@@ -5,7 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Animated,
+  Animated as RNAnimated,
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,10 +23,24 @@ import {
   AlertTriangle,
   Home,
 } from 'lucide-react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withRepeat,
+  withSequence,
+  withDelay,
+  runOnJS,
+  FadeIn,
+  FadeInDown,
+  cancelAnimation,
+} from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useOrders } from '@/providers/OrderProvider';
 import { useI18n } from '@/providers/I18nProvider';
 import { Order } from '@/types';
+import { ScalePressable, SPRING, DURATION, EASE_OUT, useReduceMotion } from '@/lib/motion';
 
 /**
  * 4-stage tracker contract (verified against prod SQL — 9,916 orders):
@@ -56,13 +70,13 @@ export default function TrackingScreen() {
   const activeOrder = orderId
     ? orders.find(o => o.id === orderId) || null
     : getActiveOrder();
-  const pulseAnim = useRef(new Animated.Value(0.3)).current;
+  const pulseAnim = useRef(new RNAnimated.Value(0.3)).current;
 
   useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0.3, duration: 1000, useNativeDriver: true }),
+    const pulse = RNAnimated.loop(
+      RNAnimated.sequence([
+        RNAnimated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+        RNAnimated.timing(pulseAnim, { toValue: 0.3, duration: 1000, useNativeDriver: true }),
       ])
     );
     pulse.start();
@@ -158,9 +172,9 @@ export default function TrackingScreen() {
               typical range for the current stage instead of a fabricated time. */}
           {!isTerminal && activeOrder.status !== 'delivered' && (
             <View style={styles.etaCard}>
-              <Animated.View style={{ opacity: pulseAnim }}>
+              <RNAnimated.View style={{ opacity: pulseAnim }}>
                 <Clock size={20} color={Colors.primary} />
-              </Animated.View>
+              </RNAnimated.View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.etaLabel}>{t('est_delivery')}</Text>
                 <Text style={styles.etaValue}>{t('eta_typical_range')}</Text>
@@ -178,14 +192,13 @@ export default function TrackingScreen() {
               {(activeOrder as any).cancelled_reason ? (
                 <Text style={styles.terminalReason}>{(activeOrder as any).cancelled_reason}</Text>
               ) : null}
-              <TouchableOpacity
+              <ScalePressable
                 style={styles.terminalButton}
                 onPress={() => router.replace('/(tabs)/(home)')}
-                activeOpacity={0.85}
               >
                 <Home size={18} color="#FFFFFF" />
                 <Text style={styles.terminalButtonText}>{t('back_home')}</Text>
-              </TouchableOpacity>
+              </ScalePressable>
             </View>
           ) : isFailed ? (
             <View style={styles.terminalCard}>
@@ -195,22 +208,20 @@ export default function TrackingScreen() {
               <Text style={styles.terminalTitle}>{t('delivery_unsuccessful')}</Text>
               <Text style={styles.terminalTitleMM}>{tMM('delivery_unsuccessful')}</Text>
               <View style={styles.terminalActions}>
-                <TouchableOpacity
+                <ScalePressable
                   style={[styles.terminalButton, styles.terminalButtonOutline]}
                   onPress={() => Linking.openURL('tel:8484')}
-                  activeOpacity={0.85}
                 >
                   <Phone size={18} color={Colors.primary} />
                   <Text style={[styles.terminalButtonText, { color: Colors.primary }]}>{t('contact_8484')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                </ScalePressable>
+                <ScalePressable
                   style={styles.terminalButton}
                   onPress={() => router.replace('/(tabs)/(home)')}
-                  activeOpacity={0.85}
                 >
                   <Home size={18} color="#FFFFFF" />
                   <Text style={styles.terminalButtonText}>{t('back_home')}</Text>
-                </TouchableOpacity>
+                </ScalePressable>
               </View>
             </View>
           ) : (
@@ -224,14 +235,25 @@ export default function TrackingScreen() {
                   <View key={step.key} style={styles.statusRow}>
                     <View style={styles.statusIndicator}>
                       {isCompleted ? (
-                        <View style={[styles.statusCircleCompleted, isCurrent && styles.statusCircleCurrent]}>
+                        <Animated.View
+                          key={`check-${step.key}`}
+                          style={[styles.statusCircleCompleted, isCurrent && styles.statusCircleCurrent]}
+                          entering={FadeIn.springify().damping(12).stiffness(200)}
+                        >
                           <CheckCircle size={20} color={isCurrent ? Colors.primary : Colors.success} />
-                        </View>
+                        </Animated.View>
                       ) : (
                         <Circle size={20} color={Colors.border} />
                       )}
                       {!isLast && (
-                        <View style={[styles.statusLine, isCompleted && styles.statusLineCompleted]} />
+                        <View style={[styles.statusLine, isCompleted && styles.statusLineCompleted]}>
+                          {isCompleted && (
+                            <Animated.View
+                              style={styles.statusLineFill}
+                              entering={FadeIn.springify().damping(22).stiffness(150)}
+                            />
+                          )}
+                        </View>
                       )}
                     </View>
                     <View style={styles.statusContent}>
@@ -404,6 +426,10 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   statusLineCompleted: {
+    backgroundColor: Colors.success,
+  },
+  statusLineFill: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: Colors.success,
   },
   statusContent: {

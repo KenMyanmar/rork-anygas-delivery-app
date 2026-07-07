@@ -13,21 +13,32 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
-  Animated,
+  Animated as RNAnimated,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Flame, Delete, Fingerprint, HelpCircle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withSequence,
+  withDelay,
+  runOnJS,
+  withRepeat,
+  cancelAnimation,
+} from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { usePinLock } from '@/providers/PinLockProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useI18n } from '@/providers/I18nProvider';
 import { router } from 'expo-router';
+import { SPRING, useReduceMotion, ScalePressable } from '@/lib/motion';
 
 type Mode = 'setup' | 'confirm' | 'unlock';
 
@@ -53,11 +64,11 @@ export default function PinLockScreen() {
   const [firstPin, setFirstPin] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
-  const shakeAnim = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const shakeAnim = useRef(new RNAnimated.Value(0)).current;
+  const fadeAnim = useRef(new RNAnimated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
+    RNAnimated.timing(fadeAnim, {
       toValue: 1,
       duration: 300,
       useNativeDriver: true,
@@ -80,11 +91,11 @@ export default function PinLockScreen() {
 
   const triggerShake = useCallback(() => {
     if (Platform.OS === 'web') return;
-    Animated.sequence([
-      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+    RNAnimated.sequence([
+      RNAnimated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+      RNAnimated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
+      RNAnimated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+      RNAnimated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
     ]).start();
   }, [shakeAnim]);
 
@@ -240,7 +251,7 @@ export default function PinLockScreen() {
     <View style={styles.container}>
       <StatusBar style="light" />
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+        <RNAnimated.View style={[styles.content, { opacity: fadeAnim }]}>
           {/* Logo */}
           <View style={styles.logoSection}>
             <View style={styles.logoCircle}>
@@ -262,19 +273,12 @@ export default function PinLockScreen() {
             <Text style={styles.subtitle}>{subtitle}</Text>
           </View>
 
-          {/* PIN dots */}
-          <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
+          {/* PIN dots — vD-MOTION moment 6: spring bounce per digit + error flash */}
+          <RNAnimated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
             {[0, 1, 2, 3].map((i) => (
-              <View
-                key={i}
-                style={[
-                  styles.pinDot,
-                  i < pin.length && styles.pinDotFilled,
-                  errorMsg ? styles.pinDotError : null,
-                ]}
-              />
+              <PinDot key={i} filled={i < pin.length} hasError={!!errorMsg} index={i} />
             ))}
-          </Animated.View>
+          </RNAnimated.View>
 
           {/* Error message */}
           {errorMsg ? (
@@ -283,7 +287,7 @@ export default function PinLockScreen() {
             <Text style={styles.errorPlaceholder}>&nbsp;</Text>
           )}
 
-          {/* Keypad */}
+          {/* Keypad — vD-MOTION moment 1: press-scale on keys */}
           <View style={styles.keypad}>
             {KEYPAD_DIGITS.map((row, rowIdx) => (
               <View key={rowIdx} style={styles.keypadRow}>
@@ -293,25 +297,15 @@ export default function PinLockScreen() {
                   }
                   if (key === 'del') {
                     return (
-                      <TouchableOpacity
-                        key={colIdx}
-                        style={styles.key}
-                        onPress={handleDelete}
-                        activeOpacity={0.5}
-                      >
+                      <KeypadKey key={colIdx} onPress={handleDelete} pressScale={0.92}>
                         <Delete size={28} color={Colors.textSecondary} />
-                      </TouchableOpacity>
+                      </KeypadKey>
                     );
                   }
                   return (
-                    <TouchableOpacity
-                      key={colIdx}
-                      style={styles.key}
-                      onPress={() => handleKeyPress(key)}
-                      activeOpacity={0.4}
-                    >
+                    <KeypadKey key={colIdx} onPress={() => handleKeyPress(key)} pressScale={0.92}>
                       <Text style={styles.keyText}>{key}</Text>
-                    </TouchableOpacity>
+                    </KeypadKey>
                   );
                 })}
               </View>
@@ -321,34 +315,101 @@ export default function PinLockScreen() {
           {/* Bottom actions: biometric + forgot PIN */}
           <View style={styles.bottomActions}>
             {mode === 'unlock' && biometricEnabled && biometricAvailable ? (
-              <TouchableOpacity
+              <ScalePressable
                 style={styles.biometricBtn}
                 onPress={triggerBiometric}
-                activeOpacity={0.7}
               >
                 <Fingerprint size={24} color={Colors.primary} />
                 <Text style={styles.biometricText}>{t('biometric_unlock')}</Text>
-              </TouchableOpacity>
+              </ScalePressable>
             ) : (
               <View style={{ height: 48 }} />
             )}
 
             {mode === 'unlock' ? (
-              <TouchableOpacity
+              <ScalePressable
                 style={styles.forgotBtn}
                 onPress={handleForgotPin}
-                activeOpacity={0.7}
               >
                 <HelpCircle size={16} color={Colors.textTertiary} />
                 <Text style={styles.forgotText}>{t('pin_forgot')}</Text>
-              </TouchableOpacity>
+              </ScalePressable>
             ) : (
               <View style={{ height: 24 }} />
             )}
           </View>
-        </Animated.View>
+        </RNAnimated.View>
       </SafeAreaView>
     </View>
+  );
+}
+
+/**
+ * vD-MOTION moment 6: PIN dot with spring bounce when filled + error flash.
+ * Spring-bounces when a digit is entered; flashes error color once on wrong
+ * PIN (kept simple — no looping). Stays static under reduce-motion.
+ */
+function PinDot({ filled, hasError, index }: { filled: boolean; hasError: boolean; index: number }) {
+  const reduce = useReduceMotion();
+  const scale = useSharedValue(1);
+  const errorFlash = useSharedValue(0);
+  const prevFilled = useRef(false);
+
+  useEffect(() => {
+    if (reduce) return;
+    if (filled && !prevFilled.current) {
+      // Spring bounce on digit entry: 1 → 1.25 → 1
+      scale.value = withSequence(
+        withSpring(1.25, SPRING.bouncy),
+        withSpring(1, SPRING.standard),
+      );
+    }
+    prevFilled.current = filled;
+  }, [filled, reduce]);
+
+  useEffect(() => {
+    if (reduce) return;
+    if (hasError) {
+      // Flash error color once
+      errorFlash.value = withSequence(
+        withTiming(1, { duration: 100 }),
+        withTiming(0, { duration: 400 }),
+      );
+    } else {
+      errorFlash.value = 0;
+    }
+  }, [hasError, reduce]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const borderColor = errorFlash.value > 0.5 ? Colors.error : hasError ? Colors.error : filled ? Colors.primary : Colors.border;
+    const bgColor = errorFlash.value > 0.5 ? Colors.error : filled ? Colors.primary : 'transparent';
+    return {
+      transform: reduce ? [] : [{ scale: scale.value }],
+      backgroundColor: bgColor,
+      borderColor,
+    };
+  });
+
+  return <Animated.View style={[styles.pinDot, animatedStyle]} />;
+}
+
+/**
+ * vD-MOTION moment 1: keypad key with press-scale. Large touch target,
+ * scales to 0.92 on press. Falls back to opacity under reduce-motion.
+ */
+function KeypadKey({
+  children,
+  onPress,
+  pressScale = 0.92,
+}: {
+  children: React.ReactNode;
+  onPress: () => void;
+  pressScale?: number;
+}) {
+  return (
+    <ScalePressable style={styles.key} onPress={onPress} pressScale={pressScale}>
+      {children}
+    </ScalePressable>
   );
 }
 
