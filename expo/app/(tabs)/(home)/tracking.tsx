@@ -103,10 +103,12 @@ export default function TrackingScreen() {
   const currentStage = isTerminal ? -1 : computeStage(activeOrder);
 
   const orderLabel = [
-    activeOrder.quantity && activeOrder.quantity > 1 ? `${activeOrder.quantity}×` : null,
-    activeOrder.brandName,
-    activeOrder.cylinderSize ? `${activeOrder.cylinderSize} kg` : null,
-    activeOrder.cylinderType || null,
+    // NS-2: bundle orders show the package name; brand/cylinder are baked in.
+    activeOrder.bundleName || null,
+    !activeOrder.bundleName && activeOrder.quantity && activeOrder.quantity > 1 ? `${activeOrder.quantity}×` : null,
+    !activeOrder.bundleName ? activeOrder.brandName : null,
+    !activeOrder.bundleName && activeOrder.cylinderSize ? `${activeOrder.cylinderSize} kg` : null,
+    !activeOrder.bundleName ? (activeOrder.cylinderType || null) : null,
   ].filter(Boolean).join(' · ') || 'Gas';
 
   const orderTypeLabel = activeOrder.orderType === 'refill' ? t('type_refill')

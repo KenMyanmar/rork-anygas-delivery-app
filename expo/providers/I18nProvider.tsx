@@ -207,6 +207,20 @@ const STRINGS = {
   location_loading: { mm: 'နေရာ ရှာနေသည်...', en: 'Getting location...' },
   address_saved_success: { mm: 'လိပ်စာ သိမ်းဆည်ပြီးပါပြီ ✓', en: 'Address saved ✓' },
   edit_address_title: { mm: 'ပို့ဆောင်ရမည့်လိပ်စာ ပြင်ဆင်ပါ', en: 'Edit Delivery Address' },
+
+  // NS-2: New Set bundle showcase
+  bundles_title: { mm: 'အသစ်တပ်ဆင် ပက်ကေ့ဂျ်', en: 'New Set Packages' },
+  bundles_sub: { mm: 'ဆလင်ဒါ + စတုံးကိရိယာ ပါဝင်သော ပက်ကေ့ဂျ်', en: 'Cylinder + accessory bundles' },
+  bundles_empty: { mm: 'လက်ရှိ ပရိုမိုးရှင်း မရှိပါ', en: 'No promotions available right now' },
+  bundles_empty_sub: { mm: 'အသစ်တပ်ဆင်ရန် အနီးကြီး ဆက်သွယ်ပါ', en: 'Call 8484 for a custom new setup' },
+  bundle_save: { mm: '{n} Ks ချွေး', en: 'Save {n} Ks' },
+  bundle_value: { mm: 'တန်ဖိုး', en: 'Value' },
+  bundle_price: { mm: 'ပက်ကေ့ဂျ် စျေး', en: 'Package price' },
+  bundle_free_delivery: { mm: 'ပို့ဆောင်ခ အခမဲ့', en: 'Free delivery' },
+  bundle_brand_label: { mm: 'အမှတ်တံဆိပ်', en: 'Brand' },
+  bundle_includes: { mm: 'ပါဝင်ရန်များ', en: 'Includes' },
+  bundle_not_available: { mm: 'ဤပရိုမိုးရှင်း ပြီးဆုံးသွားပါပြီ။ ပက်ကေ့ဂျ်များကို ပြန်လည် စစ်ဆေးပါသည်။', en: 'This promotion has ended. Refreshing packages…' },
+  bundle_qty: { mm: '{n} ခု', en: '{n} pcs' },
 } as const;
 
 export type StringKey = keyof typeof STRINGS;

@@ -9,6 +9,7 @@ import {
   Animated,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -51,8 +52,10 @@ import {
   PricingBreakdown,
   SavedAddress,
   CylinderOption,
+  EquipmentBundle,
 } from '@/types';
 import { fetchCatalog, displayBrandName, CatalogEntry } from '@/lib/catalog';
+import { fetchEquipmentBundles, bundleBrandLabel, computeComponentValue } from '@/lib/bundles';
 import { useI18n } from '@/providers/I18nProvider';
 
 // Derived from catalog-list response — single source of truth.
@@ -68,7 +71,7 @@ interface CatalogBrand {
 // vC17 r2: intent-first flow. Intent (Refill/New Set) is the first screen;
 // the memory shortcut ("Your usual") appears for repeat refill customers.
 // The old standalone 'type' step is gone — intent replaces it.
-type Step = 'intent' | 'usual' | 'brand' | 'size' | 'pricing' | 'address' | 'payment' | 'confirm';
+type Step = 'intent' | 'usual' | 'brand' | 'size' | 'pricing' | 'bundles' | 'address' | 'payment' | 'confirm';
 
 const STEP_LABELS: Record<Step, string> = {
   intent: 'Order',
@@ -76,6 +79,7 @@ const STEP_LABELS: Record<Step, string> = {
   brand: 'Brand',
   size: 'Size',
   pricing: 'Price',
+  bundles: 'Sets',
   address: 'Address',
   payment: 'Payment',
   confirm: 'Confirm',
@@ -129,7 +133,7 @@ export default function OrderScreen() {
     reorderType?: string;
   }>();
   const { savedAddresses, getDefaultAddress, customerId, activeCustomer, updateCustomerAddress } = useAuth();
-  const { placeOrder, getLastDeliveredOrder, orders } = useOrders();
+  const { placeOrder, placeBundleOrder, getLastDeliveredOrder, orders } = useOrders();
   const { t, tMM, language, isMM } = useI18n();
 
   // vC17 r2: intent-first flow. Intent is the first screen; the memory
@@ -181,6 +185,11 @@ export default function OrderScreen() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
+  // NS-2: selected equipment bundle (New Set path). When set, the confirm
+  // screen shows the bundle name and placeBundleOrder is used instead of
+  // placeOrder. The server prices from bundle_price — no client computation.
+  const [selectedBundle, setSelectedBundle] = useState<EquipmentBundle | null>(null);
+
   // Single fetch via the catalog-list edge function — same source the Mini App uses.
   // Returns brands (with refill_delivery_fee + allow_new_setup) and their products in one call.
   const catalogQuery = useQuery({
@@ -190,6 +199,19 @@ export default function OrderScreen() {
       return await fetchCatalog();
     },
   });
+
+  // NS-2: equipment bundles (New Set showcase). RLS exposes only visible bundles
+  // (active + show_in_app + validity window). Empty result → the New Set intent
+  // card shows a disabled "promotions coming" state and does not navigate.
+  const bundlesQuery = useQuery({
+    queryKey: ['equipment_bundles'],
+    queryFn: async () => {
+      console.log('[Order] Fetching equipment_bundles');
+      return await fetchEquipmentBundles();
+    },
+  });
+  const visibleBundles: EquipmentBundle[] = useMemo(() => bundlesQuery.data || [], [bundlesQuery.data]);
+  const hasVisibleBundles = visibleBundles.length > 0;
 
   const brands: CatalogBrand[] = useMemo(() => {
     if (!catalogQuery.data) return [];
@@ -261,17 +283,25 @@ export default function OrderScreen() {
     return brand;
   }, [brands, selectedBrandId]);
 
-  // vC17 r2: step sequence is dynamic. Intent is always first. For refill +
-  // history, the "usual" card is offered (but is part of the intent step's
-  // render, not a separate navigated step). The old standalone 'type' step is
-  // gone — intent replaces it. The address step is gated as before.
+  // vC17 r2: step sequence is dynamic. Intent is always first. For refill,
+  // the path is brand → size → pricing. For New Set (NS-2), the brand step is
+  // GONE — the customer picks a bundle directly; brand is baked into each
+  // bundle and shown as a label on the card, never as a choice. The address
+  // step is gated as before.
   const needsAddressStep = !customerHasAddress || showAddressStep || editingAddress;
   const buildSteps = useCallback((): Step[] => {
+    if (selectedType === 'new_setup') {
+      // NS-2: New Set path skips brand + size entirely.
+      const base: Step[] = ['intent', 'bundles'];
+      if (needsAddressStep) base.push('address');
+      base.push('payment', 'confirm');
+      return base;
+    }
     const base: Step[] = ['intent', 'brand', 'size', 'pricing'];
     if (needsAddressStep) base.push('address');
     base.push('payment', 'confirm');
     return base;
-  }, [needsAddressStep]);
+  }, [needsAddressStep, selectedType]);
   const steps = buildSteps();
   const currentStepIndex = steps.indexOf(currentStep);
   const progress = currentStepIndex >= 0 ? (currentStepIndex + 1) / steps.length : 0;
@@ -294,7 +324,9 @@ export default function OrderScreen() {
 
   // vC17 r2: selecting an intent card drives the whole downstream flow.
   // Refill + history → show the "Your usual" card (inline on the intent step).
-  // Either way, advance to brand (filtered by intent).
+  // NS-2: New Set → bundle showcase (brand is baked into each bundle, never
+  // a standalone step). If no visible bundles exist, the New Set card is
+  // disabled and shows a "promotions coming" state — it does not navigate.
   const handleSelectIntent = useCallback((intent: OrderType) => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -305,7 +337,13 @@ export default function OrderScreen() {
     setSelectedBrandId(null);
     setSelectedCylinder(null);
     setQuantity(1);
-    setCurrentStep('brand');
+    setSelectedBundle(null);
+    if (intent === 'new_setup') {
+      // NS-2: New Set goes straight to the bundle showcase (no brand step).
+      setCurrentStep('bundles');
+    } else {
+      setCurrentStep('brand');
+    }
     animateTransition();
   }, [animateTransition]);
 
@@ -413,9 +451,28 @@ export default function OrderScreen() {
   }, [selectedCylinder, selectedType, quantity, selectedBrand, selectedCatalogEntry]);
 
   const handleConfirmOrder = useCallback(async () => {
-    if (!selectedBrandId || !selectedCylinder || !selectedType || !selectedAddress || !selectedPayment || !customerId) return;
+    if (!selectedType || !selectedAddress || !selectedPayment || !customerId) return;
     setIsSubmitting(true);
     try {
+      // NS-2: bundle path — the server prices from bundle_price. We send ONLY
+      // {bundleId, clientTotal, orderType, quantity, paymentMethod}. No
+      // cylinderType/sizeKg/brandId on the bundle path — the server derives them.
+      if (selectedType === 'new_setup' && selectedBundle) {
+        await placeBundleOrder({
+          bundleId: selectedBundle.id,
+          bundleName: selectedBundle.name,
+          bundlePrice: selectedBundle.bundle_price,
+          paymentMethod: selectedPayment,
+          address: selectedAddress,
+        });
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+        router.replace('/(tabs)/(home)/tracking');
+        return;
+      }
+      // Refill path — existing flow.
+      if (!selectedBrandId || !selectedCylinder) return;
       const pricingData = calculatePricing();
       await placeOrder({
         brandId: selectedBrandId,
@@ -438,11 +495,30 @@ export default function OrderScreen() {
     } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : t('order_failed');
       console.log('[Order] Error placing order:', errorMessage);
+      // NS-2: handle bundle_not_available (promotion ended mid-flow).
+      if (errorMessage === 'bundle_not_available') {
+        Alert.alert(
+          isMM ? 'ပရိုမိုးရှင်း' : 'Promotion',
+          t('bundle_not_available'),
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                bundlesQuery.refetch();
+                setSelectedBundle(null);
+                setCurrentStep('bundles');
+                animateTransition();
+              },
+            },
+          ],
+        );
+        return;
+      }
       Alert.alert(t('order_failed'), errorMessage);
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedBrandId, selectedBrand, selectedCylinder, selectedType, selectedAddress, selectedPayment, customerId, quantity, calculatePricing, placeOrder, t]);
+  }, [selectedBrandId, selectedBrand, selectedCylinder, selectedType, selectedBundle, selectedAddress, selectedPayment, customerId, quantity, calculatePricing, placeOrder, placeBundleOrder, t, isMM, bundlesQuery, animateTransition]);
 
   const pricing = calculatePricing();
 
@@ -506,24 +582,204 @@ export default function OrderScreen() {
                 <Text style={styles.intentDesc}>{t('intent_refill_desc')}</Text>
               </TouchableOpacity>
 
-              {/* New Set — cylinder + regulator. Promotions badge slot for Lane 2. */}
+              {/* New Set — cylinder + regulator. NS-2: when no visible bundles
+                  exist, the card shows a disabled "promotions coming" state and
+                  does not navigate. Brand is baked into each bundle, never a step. */}
               <TouchableOpacity
-                style={styles.intentCard}
-                onPress={() => handleSelectIntent('new_setup')}
+                style={[
+                  styles.intentCard,
+                  !hasVisibleBundles && styles.intentCardDisabled,
+                ]}
+                onPress={() => hasVisibleBundles && handleSelectIntent('new_setup')}
                 activeOpacity={0.8}
+                disabled={!hasVisibleBundles}
                 testID="intent-newset"
               >
-                <View style={[styles.intentIconWrap, styles.intentIconNewSet]}>
-                  <Sparkles size={28} color="#FFFFFF" />
+                <View style={[styles.intentIconWrap, styles.intentIconNewSet, !hasVisibleBundles && styles.intentIconWrapDisabled]}>
+                  <Sparkles size={28} color={hasVisibleBundles ? '#FFFFFF' : Colors.textTertiary} />
                 </View>
-                <Text style={styles.intentTitleMM}>{tMM('intent_newset_title')}</Text>
-                <Text style={styles.intentTitle}>{t('intent_newset_title')}</Text>
+                <Text style={[styles.intentTitleMM, !hasVisibleBundles && styles.intentTitleDisabled]}>{tMM('intent_newset_title')}</Text>
+                <Text style={[styles.intentTitle, !hasVisibleBundles && styles.intentTitleDisabled]}>{t('intent_newset_title')}</Text>
                 <Text style={styles.intentDesc}>{t('intent_newset_desc')}</Text>
-                <View style={styles.intentBadge}>
-                  <Text style={styles.intentBadgeText}>{t('intent_promotions_soon')}</Text>
+                <View style={[
+                  styles.intentBadge,
+                  hasVisibleBundles ? styles.intentBadgeActive : styles.intentBadgeComingSoon,
+                ]}>
+                  <Text style={[
+                    styles.intentBadgeText,
+                    hasVisibleBundles ? styles.intentBadgeTextActive : styles.intentBadgeTextComingSoon,
+                  ]}>
+                    {hasVisibleBundles
+                      ? `${visibleBundles.length} ${isMM ? 'ပက်ကေ့ဂျ်' : 'packages'}`
+                      : t('intent_promotions_soon')}
+                  </Text>
                 </View>
               </TouchableOpacity>
             </View>
+          </View>
+        );
+
+      // NS-2: New Set path — bundle showcase. Brand is baked into each bundle
+      // (shown as a label on the card, never a choice). RLS exposes only
+      // visible bundles; empty result → empty state with a hotline prompt.
+      case 'bundles':
+        return (
+          <View style={styles.stepContent}>
+            <Text style={styles.stepTitle}>{t('bundles_title')}</Text>
+            <Text style={styles.stepTitleMM}>{tMM('bundles_title')}</Text>
+            <Text style={styles.bundlesSub}>{t('bundles_sub')}</Text>
+            {bundlesQuery.isLoading ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+                <Text style={styles.loadingText}>{isMM ? 'ပက်ကေ့ဂျ်များ ရှာနေသည်...' : 'Loading packages...'}</Text>
+              </View>
+            ) : bundlesQuery.isError ? (
+              <View style={styles.errorWrap}>
+                <Text style={styles.errorText}>{isMM ? 'ပက်ကေ့ဂျ်များ ရှာမတွေ့ပါ' : 'Failed to load packages'}</Text>
+                <TouchableOpacity
+                  style={styles.retryBtn}
+                  onPress={() => bundlesQuery.refetch()}
+                >
+                  <Text style={styles.retryText}>{t('retry')}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : visibleBundles.length === 0 ? (
+              <View style={styles.bundlesEmpty}>
+                <Sparkles size={48} color={Colors.textTertiary} />
+                <Text style={styles.bundlesEmptyTitle}>{t('bundles_empty')}</Text>
+                <Text style={styles.bundlesEmptySub}>{t('bundles_empty_sub')}</Text>
+                <TouchableOpacity
+                  style={styles.bundlesHotlineBtn}
+                  onPress={() => Linking.openURL('tel:8484')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.bundlesHotlineBtnText}>8484</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.bundlesList}>
+                {visibleBundles.map((bundle) => {
+                  const componentValue = computeComponentValue(bundle);
+                  const savings = componentValue > bundle.bundle_price ? componentValue - bundle.bundle_price : 0;
+                  const brandLabel = bundleBrandLabel(bundle);
+                  const isSelected = selectedBundle?.id === bundle.id;
+                  return (
+                    <TouchableOpacity
+                      key={bundle.id}
+                      style={[
+                        styles.bundleCard,
+                        isSelected && styles.bundleCardSelected,
+                      ]}
+                      onPress={() => {
+                        if (Platform.OS !== 'web') {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        }
+                        setSelectedBundle(bundle);
+                      }}
+                      activeOpacity={0.7}
+                      testID={`bundle-card-${bundle.id}`}
+                    >
+                      <View style={styles.bundleCardTop}>
+                        {bundle.image_url ? (
+                          <Image
+                            source={{ uri: bundle.image_url }}
+                            style={styles.bundleImage}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.bundleImageFallback}>
+                            <Package size={36} color={Colors.primary} />
+                          </View>
+                        )}
+                        <View style={styles.bundleInfo}>
+                          <Text style={styles.bundleName}>{bundle.name}</Text>
+                          {brandLabel ? (
+                            <View style={styles.bundleBrandRow}>
+                              <Text style={styles.bundleBrandLabel}>{t('bundle_brand_label')}: </Text>
+                              <Text style={styles.bundleBrandValue}>{brandLabel}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+
+                      {/* Itemized component value with strikethrough where computable */}
+                      {(bundle.cylinder_type || bundle.stove || (bundle.bundle_accessories && bundle.bundle_accessories.length > 0)) && (
+                        <View style={styles.bundleComponents}>
+                          <Text style={styles.bundleComponentsTitle}>{t('bundle_includes')}</Text>
+                          {bundle.cylinder_type && (
+                            <View style={styles.bundleComponentRow}>
+                              <Text style={styles.bundleComponentName}>
+                                {bundle.cylinder_type.display_name || `${bundle.cylinder_type.size_kg}kg cylinder`}
+                              </Text>
+                              {bundle.cylinder_type.cylinder_price != null && !Number.isNaN(bundle.cylinder_type.cylinder_price) && (
+                                <Text style={styles.bundleComponentValue}>
+                                  {formatPrice(bundle.cylinder_type.cylinder_price)} K
+                                </Text>
+                              )}
+                            </View>
+                          )}
+                          {bundle.stove && (
+                            <View style={styles.bundleComponentRow}>
+                              <Text style={styles.bundleComponentName}>{bundle.stove.name}</Text>
+                              {bundle.stove.price != null && !Number.isNaN(bundle.stove.price) && (
+                                <Text style={styles.bundleComponentValue}>
+                                  {formatPrice(bundle.stove.price)} K
+                                </Text>
+                              )}
+                            </View>
+                          )}
+                          {(bundle.bundle_accessories || []).map((acc, i) => {
+                            if (!acc.accessory) return null;
+                            const unitPrice = acc.accessory.price;
+                            const lineTotal = unitPrice != null && !Number.isNaN(unitPrice) ? unitPrice * (acc.quantity || 1) : null;
+                            return (
+                              <View key={`acc-${i}`} style={styles.bundleComponentRow}>
+                                <Text style={styles.bundleComponentName}>
+                                  {acc.quantity > 1 ? `${acc.quantity}× ` : ''}{acc.accessory.name}
+                                </Text>
+                                {lineTotal != null && (
+                                  <Text style={styles.bundleComponentValue}>
+                                    {formatPrice(lineTotal)} K
+                                  </Text>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      {/* Price row with optional savings */}
+                      <View style={styles.bundlePriceRow}>
+                        <View style={styles.bundlePriceLeft}>
+                          <Text style={styles.bundlePriceLabel}>{t('bundle_price')}</Text>
+                          {savings > 0 && componentValue > 0 && (
+                            <Text style={styles.bundleValueStrikethrough}>
+                              {formatPrice(componentValue)} K
+                            </Text>
+                          )}
+                        </View>
+                        <Text style={styles.bundlePriceValue}>{formatPrice(bundle.bundle_price)} K</Text>
+                      </View>
+                      {savings > 0 && (
+                        <View style={styles.bundleSavingsChip}>
+                          <Text style={styles.bundleSavingsText}>
+                            {t('bundle_save').replace('{n}', formatPrice(savings))}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.bundleFreeDeliveryRow}>
+                        <Text style={styles.bundleFreeDeliveryText}>{t('bundle_free_delivery')}</Text>
+                      </View>
+                      {isSelected && (
+                        <View style={styles.bundleSelectedBadge}>
+                          <Check size={16} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
           </View>
         );
 
@@ -1009,32 +1265,62 @@ export default function OrderScreen() {
             <Text style={styles.stepTitle}>{t('confirm_order')}</Text>
             <Text style={styles.stepTitleMM}>{tMM('confirm_order')}</Text>
             <View style={styles.confirmCard}>
-              <View style={styles.confirmRow}>
-                <Text style={styles.confirmLabel}>{t('brand')}</Text>
-                <Text style={styles.confirmValue}>{selectedBrand?.name}</Text>
-              </View>
-              <View style={styles.confirmRow}>
-                <Text style={styles.confirmLabel}>{t('size')}</Text>
-                <Text style={styles.confirmValue}>{selectedCylinder?.size} kg</Text>
-              </View>
-              {/* vC17: show quantity on confirm when >1 */}
-              {quantity > 1 && (
-                <View style={styles.confirmRow}>
-                  <Text style={styles.confirmLabel}>{t('quantity')}</Text>
-                  <Text style={styles.confirmValue}>{quantity}</Text>
-                </View>
+              {/* NS-2: bundle path — show the package name + brand label. */}
+              {selectedType === 'new_setup' && selectedBundle ? (
+                <>
+                  <View style={styles.confirmRow}>
+                    <Text style={styles.confirmLabel}>{isMM ? 'ပက်ကေ့ဂျ်' : 'Package'}</Text>
+                    <Text style={styles.confirmValue}>{selectedBundle.name}</Text>
+                  </View>
+                  {bundleBrandLabel(selectedBundle) ? (
+                    <View style={styles.confirmRow}>
+                      <Text style={styles.confirmLabel}>{t('brand')}</Text>
+                      <Text style={styles.confirmValue}>{bundleBrandLabel(selectedBundle)}</Text>
+                    </View>
+                  ) : null}
+                  {selectedBundle.cylinder_type && (
+                    <View style={styles.confirmRow}>
+                      <Text style={styles.confirmLabel}>{t('size')}</Text>
+                      <Text style={styles.confirmValue}>
+                        {selectedBundle.cylinder_type.display_name || `${selectedBundle.cylinder_type.size_kg} kg`}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.confirmRow}>
+                    <Text style={styles.confirmLabel}>{t('type')}</Text>
+                    <Text style={styles.confirmValue}>{t('type_new_setup')}</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.confirmRow}>
+                    <Text style={styles.confirmLabel}>{t('brand')}</Text>
+                    <Text style={styles.confirmValue}>{selectedBrand?.name}</Text>
+                  </View>
+                  <View style={styles.confirmRow}>
+                    <Text style={styles.confirmLabel}>{t('size')}</Text>
+                    <Text style={styles.confirmValue}>{selectedCylinder?.size} kg</Text>
+                  </View>
+                  {/* vC17: show quantity on confirm when >1 */}
+                  {quantity > 1 && (
+                    <View style={styles.confirmRow}>
+                      <Text style={styles.confirmLabel}>{t('quantity')}</Text>
+                      <Text style={styles.confirmValue}>{quantity}</Text>
+                    </View>
+                  )}
+                  <View style={styles.confirmRow}>
+                    <Text style={styles.confirmLabel}>{t('type')}</Text>
+                    <Text style={styles.confirmValue}>
+                      {(() => {
+                        const id = selectedType;
+                        const label = id === 'refill' ? t('type_refill')
+                          : t('type_new_setup');
+                        return label;
+                      })()}
+                    </Text>
+                  </View>
+                </>
               )}
-              <View style={styles.confirmRow}>
-                <Text style={styles.confirmLabel}>{t('type')}</Text>
-                <Text style={styles.confirmValue}>
-                  {(() => {
-                    const id = selectedType;
-                    const label = id === 'refill' ? t('type_refill')
-                      : t('type_new_setup');
-                    return label;
-                  })()}
-                </Text>
-              </View>
               <View style={styles.confirmRow}>
                 <Text style={styles.confirmLabel}>{t('address')}</Text>
                 <Text style={styles.confirmValue} numberOfLines={2}>{selectedAddress?.address}</Text>
@@ -1054,7 +1340,10 @@ export default function OrderScreen() {
               <View style={styles.pricingDivider} />
               <View style={styles.confirmRow}>
                 <Text style={styles.pricingTotal}>{t('total')}</Text>
-                <Text style={styles.pricingTotalValue}>{formatPrice(pricing.total)} MMK</Text>
+                <Text style={styles.pricingTotalValue}>
+                  {/* NS-2: bundle path — the server prices from bundle_price. */}
+                  {formatPrice(selectedType === 'new_setup' && selectedBundle ? selectedBundle.bundle_price : pricing.total)} MMK
+                </Text>
               </View>
             </View>
           </View>
@@ -1149,6 +1438,8 @@ export default function OrderScreen() {
       case 'brand': return !!selectedBrandId;
       case 'size': return !!selectedCylinder;
       case 'pricing': return true;
+      // NS-2: bundle must be selected to proceed on the New Set path.
+      case 'bundles': return !!selectedBundle;
       case 'address':
         // Address gate: if editing (or no address), the Save button drives proceed.
         // If showing existing address, allow proceed.
@@ -1228,7 +1519,7 @@ export default function OrderScreen() {
               ) : (
                 <>
                   <Flame size={20} color="#FFFFFF" />
-                  <Text style={styles.confirmButtonText}>{t('place_order')} • {formatPrice(pricing.total)} MMK</Text>
+                  <Text style={styles.confirmButtonText}>{t('place_order')} • {formatPrice(selectedType === 'new_setup' && selectedBundle ? selectedBundle.bundle_price : pricing.total)} MMK</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -1428,6 +1719,225 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700' as const,
     color: '#7C3AED',
+  },
+  // NS-2: disabled New Set card (no visible bundles).
+  intentCardDisabled: {
+    opacity: 0.5,
+    backgroundColor: Colors.background,
+  },
+  intentIconWrapDisabled: {
+    backgroundColor: Colors.border,
+  },
+  intentTitleDisabled: {
+    color: Colors.textTertiary,
+  },
+  intentBadgeActive: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+  },
+  intentBadgeTextActive: {
+    color: '#16A34A',
+  },
+  intentBadgeComingSoon: {
+    backgroundColor: '#F5F5F4',
+    borderColor: Colors.border,
+  },
+  intentBadgeTextComingSoon: {
+    color: Colors.textTertiary,
+  },
+  // NS-2: bundle showcase styles.
+  bundlesSub: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginBottom: 20,
+  },
+  bundlesEmpty: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingBottom: 40,
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  bundlesEmptyTitle: {
+    fontSize: 17,
+    fontWeight: '700' as const,
+    color: Colors.textPrimary,
+    textAlign: 'center' as const,
+    marginTop: 8,
+  },
+  bundlesEmptySub: {
+    fontSize: 14,
+    color: Colors.textTertiary,
+    textAlign: 'center' as const,
+  },
+  bundlesHotlineBtn: {
+    marginTop: 12,
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.primary + '30',
+  },
+  bundlesHotlineBtnText: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+  },
+  bundlesList: {
+    gap: 16,
+  },
+  bundleCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    position: 'relative' as const,
+  },
+  bundleCardSelected: {
+    borderColor: Colors.primary,
+    borderWidth: 2.5,
+    backgroundColor: Colors.primaryLight,
+  },
+  bundleCardTop: {
+    flexDirection: 'row',
+    gap: 14,
+    marginBottom: 14,
+  },
+  bundleImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 14,
+  },
+  bundleImageFallback: {
+    width: 80,
+    height: 80,
+    borderRadius: 14,
+    backgroundColor: Colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bundleInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  bundleName: {
+    fontSize: 17,
+    fontWeight: '800' as const,
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  bundleBrandRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+  },
+  bundleBrandLabel: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    fontWeight: '600' as const,
+  },
+  bundleBrandValue: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: '700' as const,
+  },
+  bundleComponents: {
+    backgroundColor: Colors.background,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  bundleComponentsTitle: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: Colors.textTertiary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  bundleComponentRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    paddingVertical: 3,
+  },
+  bundleComponentName: {
+    fontSize: 13,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  bundleComponentValue: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+    textDecorationLine: 'line-through' as const,
+    textDecorationStyle: 'solid' as const,
+  },
+  bundlePriceRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    marginBottom: 8,
+  },
+  bundlePriceLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  bundlePriceLabel: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+  },
+  bundleValueStrikethrough: {
+    fontSize: 13,
+    color: Colors.textTertiary,
+    textDecorationLine: 'line-through' as const,
+    textDecorationStyle: 'solid' as const,
+  },
+  bundlePriceValue: {
+    fontSize: 22,
+    fontWeight: '900' as const,
+    color: Colors.primary,
+  },
+  bundleSavingsChip: {
+    alignSelf: 'flex-start' as const,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    marginBottom: 8,
+  },
+  bundleSavingsText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: '#16A34A',
+  },
+  bundleFreeDeliveryRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+  },
+  bundleFreeDeliveryText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: '#16A34A',
+  },
+  bundleSelectedBadge: {
+    position: 'absolute' as const,
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   // vC17 r2: "Your usual" memory shortcut card.
   usualCard: {

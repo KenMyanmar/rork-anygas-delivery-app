@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { Order } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
 import { fetchCatalog, displayBrandName } from '@/lib/catalog';
+import { fetchEquipmentBundles } from '@/lib/bundles';
 
 const ORDERS_KEY = 'anygas_orders';
 
@@ -56,6 +57,9 @@ interface SupabaseOrderRow {
   // supplier_id IS NOT NULL → tracker Step 2. Verified column, verified reachable
   // through select('*') under the orders_select_own_customer RLS policy.
   supplier_id: string | null;
+  // NS-2: bundle_id marks orders placed from an equipment bundle (New Set).
+  // The EF writes it at creation when bundleId is sent in the payload.
+  bundle_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -65,6 +69,9 @@ interface SupabaseOrderRow {
 // the display name from the catalog-list cache so order cards show "Parami",
 // "Easy", "Any Brands" etc. instead of blank. Falls back gracefully.
 const BRAND_NAME_CACHE = new Map<string, string>();
+// NS-2: bundle name cache — orders has no bundle_name column, so we hydrate
+// the display name from the equipment_bundles showcase cache.
+const BUNDLE_NAME_CACHE = new Map<string, string>();
 
 async function hydrateBrandNameCache(): Promise<void> {
   if (BRAND_NAME_CACHE.size > 0) return;
@@ -75,6 +82,19 @@ async function hydrateBrandNameCache(): Promise<void> {
     }
   } catch (e) {
     console.log('[Orders] Brand name hydration failed:', e);
+  }
+}
+
+// NS-2: hydrate bundle names so order cards/tracking show the package name.
+async function hydrateBundleNameCache(): Promise<void> {
+  if (BUNDLE_NAME_CACHE.size > 0) return;
+  try {
+    const bundles = await fetchEquipmentBundles();
+    for (const b of bundles) {
+      BUNDLE_NAME_CACHE.set(b.id, b.name);
+    }
+  } catch (e) {
+    console.log('[Orders] Bundle name hydration failed:', e);
   }
 }
 
@@ -110,6 +130,10 @@ function mapSupabaseOrderToOrder(o: SupabaseOrderRow): Order {
     status: o.status as Order['status'],
     // supplier_id IS NOT NULL → supplier assigned (Step 2 of 4-stage tracker).
     supplierAssigned: !!o.supplier_id,
+    // vC13: cylinder_type removed — ghost column. cylinder_type (real) mapped above.
+    // NS-2: bundle_id → bundleName hydration from the showcase cache.
+    bundleId: o.bundle_id ?? null,
+    bundleName: o.bundle_id ? (BUNDLE_NAME_CACHE.get(o.bundle_id) || null) : null,
     createdAt: o.created_at,
     updatedAt: o.updated_at,
   };
@@ -143,6 +167,8 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
         // vC13: hydrate brand name cache before mapping so order cards show
         // the display name (orders.brand_name is 0% filled in prod).
         await hydrateBrandNameCache();
+        // NS-2: hydrate bundle names so bundle orders show the package name.
+        await hydrateBundleNameCache();
         const mapped: Order[] = (data as SupabaseOrderRow[]).map(mapSupabaseOrderToOrder);
         console.log('[Orders] Fetched orders from Supabase:', mapped.length);
         await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(mapped));
@@ -260,6 +286,86 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     return newOrder;
   }, [customerId, session, queryClient]);
 
+  // NS-2: place a bundle order (New Set). The EF v47 accepts an optional
+  // bundleId and prices the order from bundle_price server-side. We send ONLY
+  // {bundleId, clientTotal: bundle.bundle_price, orderType, quantity, paymentMethod} —
+  // the server derives brand/cylinder/size from the bundle. No client-side price
+  // computation as the charge amount; bundle_price is authoritative.
+  const placeBundleOrder = useCallback(async (bundleParams: {
+    bundleId: string;
+    bundleName: string;
+    bundlePrice: number;
+    paymentMethod: string;
+    address: Order['address'];
+  }): Promise<Order> => {
+    console.log('[Orders] Placing BUNDLE order for bundle:', bundleParams.bundleId);
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      throw new Error('Not authenticated. Please log in again.');
+    }
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+    const edgeFunctionUrl = `${supabaseUrl}/functions/v1/create-customer-order`;
+    const response = await fetch(edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        bundleId: bundleParams.bundleId,
+        clientTotal: bundleParams.bundlePrice,
+        orderType: 'new',
+        quantity: 1,
+        paymentMethod: bundleParams.paymentMethod,
+      }),
+    });
+    const result = await response.json();
+    console.log('[Orders] Bundle EF response status:', response.status, 'result:', JSON.stringify(result));
+    if (!response.ok) {
+      // bundle_not_available (400) — promotion ended mid-flow.
+      if (response.status === 400 && (result?.error?.includes?.('bundle') || result?.error?.includes?.('unavailable') || result?.error?.includes?.('not available'))) {
+        throw new Error('bundle_not_available');
+      }
+      if (response.status === 409) {
+        const serverTotal = result?.server_total ?? result?.expected_total;
+        const msg = serverTotal != null
+          ? `Price changed (server total ${Math.round(serverTotal).toLocaleString()} MMK). Please review and try again.`
+          : 'Price changed since you opened the order. Please review and try again.';
+        throw new Error(msg);
+      }
+      const errorMsg = result?.error || result?.message || 'Failed to place order';
+      throw new Error(errorMsg);
+    }
+    const createdOrder = result.order || result;
+    const newOrder: Order = {
+      id: createdOrder.id || `ord_${Date.now()}`,
+      userId: customerId || '',
+      brandId: createdOrder.brand_id || '',
+      brandName: createdOrder.brand_name || undefined,
+      cylinderSize: createdOrder.cylinder_size || 0,
+      cylinderType: createdOrder.cylinder_type ?? undefined,
+      quantity: createdOrder.quantity ?? 1,
+      orderType: 'new_setup',
+      pricing: {
+        gasPrice: createdOrder.gas_subtotal || 0,
+        cylinderPrice: createdOrder.cylinder_subtotal || 0,
+        deliveryFee: createdOrder.delivery_fee || 0,
+        total: createdOrder.total_amount || bundleParams.bundlePrice,
+      },
+      address: bundleParams.address,
+      paymentMethod: bundleParams.paymentMethod as Order['paymentMethod'],
+      status: createdOrder.status || 'new',
+      bundleId: bundleParams.bundleId,
+      bundleName: bundleParams.bundleName,
+      createdAt: createdOrder.created_at || new Date().toISOString(),
+      updatedAt: createdOrder.updated_at || new Date().toISOString(),
+    };
+    setOrders(prev => [newOrder, ...prev]);
+    setActiveOrderId(newOrder.id);
+    queryClient.invalidateQueries({ queryKey: ['orders'] });
+    return newOrder;
+  }, [customerId, session, queryClient]);
+
   // vC13: updateOrderStatus deleted. RLS-proven: there is no customer UPDATE
   // policy on orders (orders_select_own_customer is SELECT-only). The previous
   // implementation fired a fromUpdate('orders', { status }) that silently bounced
@@ -315,6 +421,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     activeOrderId,
     setActiveOrderId,
     placeOrder,
+    placeBundleOrder,
     rateOrder,
     getLastOrder,
     getLastDeliveredOrder,

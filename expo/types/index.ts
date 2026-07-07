@@ -136,6 +136,36 @@ export interface Order {
   // vC13: estimatedDelivery removed — no eta column exists on orders (bounded-
   // negative). The tracker now shows honest stage-based ranges instead of a
   // fabricated "45 min" string. Real ETA arrives with Lane 2 item 5.
+  // NS-2: bundle_id marks orders placed from an equipment bundle (New Set).
+  // The EF writes it at creation; bundle_name is hydrated client-side from
+  // the showcase cache (orders has no bundle_name column).
+  bundleId?: string | null;
+  bundleName?: string | null;
+}
+
+// NS-2: Equipment bundle (New Set showcase). RLS exposes only visible bundles
+// (active + show_in_app + validity window). The EF prices the order from
+// bundle_price server-side — the client never computes the charge amount.
+export interface BundleAccessoryRow {
+  quantity: number;
+  accessory: { name: string; price: number } | null;
+}
+
+export interface EquipmentBundle {
+  id: string;
+  name: string;
+  bundle_price: number;
+  image_url: string | null;
+  brand_id: string | null;
+  brand_name?: string | null;
+  brand?: { name: string } | null;
+  is_active: boolean;
+  show_in_app: boolean;
+  valid_from: string | null;
+  valid_until: string | null;
+  cylinder_type: { display_name: string; size_kg: number; cylinder_price: number } | null;
+  stove: { name: string; price: number } | null;
+  bundle_accessories: BundleAccessoryRow[];
 }
 
 export interface Notification {
