@@ -179,12 +179,15 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 8,
   },
+  // vD1: 44pt touch floor for filter chips
   filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 999,
     backgroundColor: Colors.background,
     marginRight: 8,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   filterChipActive: {
     backgroundColor: Colors.primary,
@@ -240,7 +243,7 @@ const styles = StyleSheet.create({
   statusDot: {
     width: 7,
     height: 7,
-    borderRadius: 4,
+    borderRadius: 999,
   },
   statusText: {
     fontSize: 12,

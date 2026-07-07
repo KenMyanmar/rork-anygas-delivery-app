@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
   miniLogo: {
     width: 32,
     height: 32,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: Colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.surface,
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 12,
     marginBottom: 20,
     gap: 10,
     borderWidth: 1,
@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   statusDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: 999,
   },
   activeOrderStatus: {
     fontSize: 13,
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.surface,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 12,
     gap: 4,
   },
   trackButtonText: {
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
   },
   heroButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 24,
+    borderRadius: 20,
     paddingVertical: 32,
     paddingHorizontal: 24,
     alignItems: 'center',
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
   heroIconWrap: {
     width: 72,
     height: 72,
-    borderRadius: 36,
+    borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -468,12 +468,12 @@ const styles = StyleSheet.create({
   heroTitleMM: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: 'rgba(255,255,255,0.85)',
+    color: 'rgba(255,255,255,0.92)',
     marginTop: 4,
   },
   heroSubtitle: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.92)',
     marginTop: 6,
   },
   section: {
@@ -564,7 +564,7 @@ const styles = StyleSheet.create({
   brandIcon: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
@@ -572,7 +572,7 @@ const styles = StyleSheet.create({
   brandLogoImage: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: 12,
     marginBottom: 10,
   },
   brandName: {

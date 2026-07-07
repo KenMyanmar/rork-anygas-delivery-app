@@ -26,6 +26,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Flame, Delete, Fingerprint, UserCog, ArrowRight } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { usePinLock } from '@/providers/PinLockProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useI18n } from '@/providers/I18nProvider';
@@ -219,8 +220,9 @@ export default function AccountTileScreen() {
             </View>
           </View>
 
-          {/* Title */}
+          {/* Title — vD1: Burmese leads, MM on top and larger */}
           <View style={styles.titleSection}>
+            <Text style={styles.titleMM}>{tMM('account_tile_enter_pin')}</Text>
             <Text style={styles.title}>{t('account_tile_enter_pin')}</Text>
           </View>
 
@@ -348,7 +350,7 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: 999,
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
@@ -371,7 +373,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface,
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 16,
     gap: 14,
     borderWidth: 1.5,
@@ -382,7 +384,7 @@ const styles = StyleSheet.create({
   tileIconWrap: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: Colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -406,10 +408,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  title: {
-    fontSize: 18,
+  // vD1: Burmese leads — MM title is primary (larger, bold, MM font)
+  titleMM: {
+    fontSize: mmFontSize(18),
+    fontFamily: mmFontFamily('bold'),
     fontWeight: '700' as const,
     color: Colors.textPrimary,
+    textAlign: 'center',
+    lineHeight: 26,
+    marginBottom: 4,
+  },
+  title: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
     textAlign: 'center',
   },
   dotsRow: {
@@ -420,7 +432,7 @@ const styles = StyleSheet.create({
   pinDot: {
     width: 14,
     height: 14,
-    borderRadius: 7,
+    borderRadius: 999,
     borderWidth: 2,
     borderColor: Colors.border,
   },
@@ -459,7 +471,7 @@ const styles = StyleSheet.create({
   key: {
     width: 68,
     height: 68,
-    borderRadius: 34,
+    borderRadius: 999,
     backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
@@ -476,12 +488,15 @@ const styles = StyleSheet.create({
     gap: 14,
     width: '100%',
   },
+  // vD1: 44pt touch floor for biometric button
   biometricBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 10,
+    paddingVertical: 14,
     paddingHorizontal: 20,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   biometricText: {
     fontSize: 14,
@@ -493,8 +508,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  // vD1: 44pt touch floor for link buttons
   linkBtn: {
-    paddingVertical: 6,
+    paddingVertical: 12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   linkText: {
     fontSize: 13,

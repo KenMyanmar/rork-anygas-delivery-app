@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   brandBadge: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.primaryLight,
     padding: 16,
-    borderRadius: 14,
+    borderRadius: 12,
     marginBottom: 16,
     gap: 12,
     borderWidth: 1,
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   },
   statusCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
   // vC13: agent card styles removed (dead agent card keyed off ghost columns)
   addressCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
   },
   terminalCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 28,
     marginBottom: 16,
     borderWidth: 1,
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   terminalIconWrap: {
     width: 72,
     height: 72,
-    borderRadius: 36,
+    borderRadius: 999,
     backgroundColor: Colors.errorLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -531,7 +531,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center' as const,
     backgroundColor: Colors.primary,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: 12,
     gap: 8,
     width: '100%' as const,
     marginTop: 4,

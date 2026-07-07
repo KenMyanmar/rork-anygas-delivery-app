@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: Colors.successLight,
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 14,
     gap: 12,
     marginBottom: 24,
@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
   currentIconWrap: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: 'rgba(22,163,74,0.12)',
     justifyContent: 'center',
     alignItems: 'center',

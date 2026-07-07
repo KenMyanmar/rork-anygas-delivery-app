@@ -23,6 +23,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Flame, Delete, Fingerprint, HelpCircle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { usePinLock } from '@/providers/PinLockProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useI18n } from '@/providers/I18nProvider';
@@ -249,13 +250,16 @@ export default function PinLockScreen() {
             <Text style={styles.brandNumber}>8484</Text>
           </View>
 
-          {/* Title + subtitle */}
+          {/* Title + subtitle — vD1: Burmese leads, MM on top and larger */}
           <View style={styles.titleSection}>
+            <Text style={styles.titleMM}>
+              {mode === 'setup' ? 'PIN ကုဒ် သတ်မှတ်ပါ'
+                : mode === 'confirm' ? 'အတည်ပြုရန် PIN ကုဒ်ကို ထပ်ထည့်ပါ'
+                : 'အက်ပ်ကို ဖွင့်ရန် PIN ထည့်ပါ'}
+            </Text>
             <Text style={styles.title}>{title}</Text>
+            <Text style={styles.subtitleMM}>{tMM(mode === 'setup' ? 'pin_setup_subtitle' : mode === 'confirm' ? 'pin_confirm_subtitle' : 'pin_unlock_subtitle')}</Text>
             <Text style={styles.subtitle}>{subtitle}</Text>
-            {mode === 'confirm' && (
-              <Text style={styles.subtitleMM}>{tMM('pin_confirm_subtitle')}</Text>
-            )}
           </View>
 
           {/* PIN dots */}
@@ -371,7 +375,7 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 64,
     height: 64,
-    borderRadius: 32,
+    borderRadius: 999,
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
@@ -394,22 +398,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 28,
   },
-  title: {
-    fontSize: 22,
+  // vD1: Burmese leads — MM title is primary (larger, bold, MM font)
+  titleMM: {
+    fontSize: mmFontSize(22),
+    fontFamily: mmFontFamily('bold'),
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginBottom: 6,
+    marginBottom: 4,
     textAlign: 'center',
+    lineHeight: 30,
   },
-  subtitle: {
-    fontSize: 14,
+  title: {
+    fontSize: 16,
+    fontWeight: '600',
     color: Colors.textSecondary,
+    marginBottom: 8,
     textAlign: 'center',
   },
   subtitleMM: {
-    fontSize: 12,
+    fontSize: mmFontSize(14),
+    fontFamily: mmFontFamily('regular'),
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 2,
+  },
+  subtitle: {
+    fontSize: 13,
     color: Colors.textTertiary,
-    marginTop: 2,
+    textAlign: 'center',
   },
   dotsRow: {
     flexDirection: 'row',
@@ -419,7 +436,7 @@ const styles = StyleSheet.create({
   pinDot: {
     width: 16,
     height: 16,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 2,
     borderColor: Colors.border,
   },
@@ -458,7 +475,7 @@ const styles = StyleSheet.create({
   key: {
     width: 72,
     height: 72,
-    borderRadius: 36,
+    borderRadius: 999,
     backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
@@ -475,23 +492,29 @@ const styles = StyleSheet.create({
     gap: 16,
     width: '100%',
   },
+  // vD1: 44pt touch floor for biometric button
   biometricBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 20,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   biometricText: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.primary,
   },
+  // vD1: 44pt touch floor for forgot-PIN button
   forgotBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   forgotText: {
     fontSize: 13,

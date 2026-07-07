@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',

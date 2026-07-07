@@ -1458,18 +1458,7 @@ export default function OrderScreen() {
           <TouchableOpacity onPress={goBack} style={styles.backBtn} activeOpacity={0.7}>
             {currentStepIndex === 0 ? <X size={22} color={Colors.textPrimary} /> : <ChevronLeft size={22} color={Colors.textPrimary} />}
           </TouchableOpacity>
-          <View style={styles.stepIndicator}>
-            {steps.map((s, i) => (
-              <View
-                key={s}
-                style={[
-                  styles.stepDot,
-                  i <= currentStepIndex && styles.stepDotActive,
-                  i === currentStepIndex && styles.stepDotCurrent,
-                ]}
-              />
-            ))}
-          </View>
+          {/* vD1: single progress indicator — animated bar only (dots removed) */}
           <Text style={styles.stepLabel}>{STEP_LABELS[currentStep]}</Text>
         </View>
 
@@ -1565,26 +1554,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
-  stepIndicator: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  stepDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.border,
-  },
-  stepDotActive: {
-    backgroundColor: Colors.primaryMuted,
-  },
-  stepDotCurrent: {
-    backgroundColor: Colors.primary,
-    width: 20,
-    borderRadius: 4,
-  },
+  // vD1: step dots removed — single progress bar only. Styles kept removed.
   stepLabel: {
     fontSize: 13,
     fontWeight: '600' as const,
@@ -1596,12 +1566,12 @@ const styles = StyleSheet.create({
     height: 3,
     backgroundColor: Colors.borderLight,
     marginHorizontal: 16,
-    borderRadius: 2,
+    borderRadius: 999,
   },
   progressFill: {
     height: 3,
     backgroundColor: Colors.primary,
-    borderRadius: 2,
+    borderRadius: 999,
   },
   scrollArea: {
     flex: 1,
@@ -1667,7 +1637,7 @@ const styles = StyleSheet.create({
   intentCard: {
     flex: 1,
     backgroundColor: Colors.surface,
-    borderRadius: 22,
+    borderRadius: 20,
     padding: 24,
     alignItems: 'center',
     borderWidth: 2,
@@ -1678,7 +1648,7 @@ const styles = StyleSheet.create({
   intentIconWrap: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: 999,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 14,
@@ -1711,7 +1681,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3E8FF',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 99,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: '#DDD6FE',
   },
@@ -1775,7 +1745,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
     paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.primary + '30',
   },
@@ -1808,12 +1778,12 @@ const styles = StyleSheet.create({
   bundleImage: {
     width: 80,
     height: 80,
-    borderRadius: 14,
+    borderRadius: 12,
   },
   bundleImageFallback: {
     width: 80,
     height: 80,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: Colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1908,7 +1878,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#DCFCE7',
     paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 99,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: '#BBF7D0',
     marginBottom: 8,
@@ -1934,7 +1904,7 @@ const styles = StyleSheet.create({
     right: 12,
     width: 28,
     height: 28,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1942,7 +1912,7 @@ const styles = StyleSheet.create({
   // vC17 r2: "Your usual" memory shortcut card.
   usualCard: {
     backgroundColor: Colors.primaryLight,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 18,
     marginBottom: 20,
     borderWidth: 1.5,
@@ -2014,7 +1984,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 99,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.primary + '20',
   },
@@ -2075,7 +2045,7 @@ const styles = StyleSheet.create({
     flexBasis: '28%' as unknown as number,
     minWidth: 100,
     backgroundColor: Colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 20,
     alignItems: 'center',
     borderWidth: 1.5,
@@ -2091,7 +2061,7 @@ const styles = StyleSheet.create({
   brandLogoFallback: {
     width: 72,
     height: 72,
-    borderRadius: 36,
+    borderRadius: 999,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
@@ -2135,12 +2105,12 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     marginBottom: 8,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   cylinderIconWrap: {
     width: 56,
     height: 56,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: Colors.borderLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -2236,7 +2206,7 @@ const styles = StyleSheet.create({
   },
   pricingCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 20,
     borderWidth: 1,
     borderColor: Colors.borderLight,
@@ -2342,7 +2312,7 @@ const styles = StyleSheet.create({
   },
   confirmCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 20,
     borderWidth: 1,
     borderColor: Colors.borderLight,
@@ -2413,7 +2383,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#F0FDF4',
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 14,
     marginBottom: 20,
     borderWidth: 1,
@@ -2428,7 +2398,7 @@ const styles = StyleSheet.create({
   deliveryBarIcon: {
     width: 32,
     height: 32,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: '#DCFCE7',
     justifyContent: 'center',
     alignItems: 'center',
@@ -2459,7 +2429,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F0FDF4',
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 14,
     marginBottom: 20,
     borderWidth: 1,
@@ -2491,7 +2461,7 @@ const styles = StyleSheet.create({
   },
   addressFormInput: {
     backgroundColor: Colors.surface,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
@@ -2509,7 +2479,7 @@ const styles = StyleSheet.create({
     alignItems: 'center' as const,
     justifyContent: 'space-between' as const,
     backgroundColor: Colors.surface,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderWidth: 1.5,
@@ -2526,7 +2496,7 @@ const styles = StyleSheet.create({
   townshipList: {
     maxHeight: 220,
     backgroundColor: Colors.surface,
-    borderRadius: 14,
+    borderRadius: 12,
     marginTop: 8,
     borderWidth: 1.5,
     borderColor: Colors.borderLight,
@@ -2571,7 +2541,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: Colors.primaryLight,
     borderWidth: 1.5,
     borderColor: Colors.primaryMuted,

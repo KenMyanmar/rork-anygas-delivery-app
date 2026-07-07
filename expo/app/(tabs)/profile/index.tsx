@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   avatarWrap: {
     width: 60,
     height: 60,
-    borderRadius: 30,
+    borderRadius: 999,
     backgroundColor: Colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
   addressIcon: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: Colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.successLight,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 999,
     alignSelf: 'flex-start',
   },
   gpsBadgeText: {
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
   addressItemIcon: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: Colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -492,7 +492,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 999,
   },
   defaultBadgeText: {
     fontSize: 11,
@@ -512,7 +512,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.surface,
     padding: 16,
-    borderRadius: 14,
+    borderRadius: 16,
     gap: 12,
     marginBottom: 8,
     borderWidth: 1,
@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between' as const,
     backgroundColor: Colors.surface,
     padding: 16,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
@@ -542,14 +542,17 @@ const styles = StyleSheet.create({
   langToggle: {
     flexDirection: 'row' as const,
     backgroundColor: Colors.background,
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 3,
     gap: 2,
   },
+  // vD1: 44pt touch floor for language toggle buttons
   langBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   langBtnActive: {
     backgroundColor: Colors.primary,
@@ -568,7 +571,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.surface,
     padding: 16,
-    borderRadius: 14,
+    borderRadius: 16,
     gap: 12,
     marginBottom: 12,
     borderWidth: 1.5,
@@ -588,6 +591,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   // vC15 Task A — Log out demoted to text link
+  // vD1: 44pt touch floor for logout link
   logoutLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -595,6 +599,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 8,
     marginBottom: 16,
+    minHeight: 44,
   },
   logoutLinkText: {
     fontSize: 14,
@@ -602,6 +607,7 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
   },
   // vC16 Task A — Remove account (destructive, bottom)
+  // vD1: 44pt touch floor for remove account link
   removeAccountLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -609,6 +615,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 6,
     marginBottom: 8,
+    minHeight: 44,
   },
   removeAccountText: {
     fontSize: 13,
@@ -622,7 +629,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.errorLight,
     padding: 16,
-    borderRadius: 14,
+    borderRadius: 16,
     gap: 10,
     marginBottom: 16,
   },

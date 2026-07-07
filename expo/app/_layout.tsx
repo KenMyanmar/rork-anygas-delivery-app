@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import * as Font from "expo-font";
+import React, { useEffect, useState } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider } from "@/providers/AuthProvider";
@@ -15,6 +16,22 @@ import AccountTileScreen from "./account-tile";
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
+
+// vD1: Load Noto Sans Myanmar for proper Burmese script rendering.
+// English stays system font. Graceful fallback if the font fails to load.
+let mmFontsReady = false;
+async function loadMyanmarFonts() {
+  try {
+    await Font.loadAsync({
+      'NotoSansMyanmar-Regular': require('./assets/fonts/NotoSansMyanmar-Regular.ttf'),
+      'NotoSansMyanmar-Medium': require('./assets/fonts/NotoSansMyanmar-Medium.ttf'),
+      'NotoSansMyanmar-Bold': require('./assets/fonts/NotoSansMyanmar-Bold.ttf'),
+    });
+    mmFontsReady = true;
+  } catch (e) {
+    console.log('[Font] Noto Sans Myanmar failed to load, using fallback:', e);
+  }
+}
 
 function RootLayoutNav() {
   return (
@@ -83,9 +100,19 @@ function AccountTileOverlay() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, setFontsLoaded] = useState(false);
+
   useEffect(() => {
-    SplashScreen.hideAsync();
+    loadMyanmarFonts().finally(() => {
+      setFontsLoaded(true);
+      SplashScreen.hideAsync();
+    });
   }, []);
+
+  if (!fontsLoaded) {
+    // Splash stays visible until fonts are ready; avoid text flash.
+    return null;
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

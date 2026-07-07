@@ -24,6 +24,7 @@ import { Flame, UserPlus, ArrowRight, ChevronDown, Check } from 'lucide-react-na
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
+import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { useAuth } from '@/providers/AuthProvider';
 import { useI18n } from '@/providers/I18nProvider';
 import { YANGON_TOWNSHIPS } from '@/constants/townships';
@@ -84,8 +85,12 @@ export default function CustomerRegisterScreen() {
             <View style={styles.logoCircle}>
               <Flame size={32} color="#FFFFFF" strokeWidth={2.5} />
             </View>
-            <Text style={styles.title}>New Customer</Text>
+            {/* vD1: Burmese leads — MM on top and larger */}
             <Text style={styles.titleMM}>ဖောက်သည်အသစ် မှတ်ပုံတင်ပါ</Text>
+            <Text style={styles.title}>New Customer</Text>
+            <Text style={styles.subtitleMM}>
+              အကောင့်အသစ်ဖွင့်ရန် သင့်အချက်အလက်များ ထည့်ပါ
+            </Text>
             <Text style={styles.subtitle}>
               No existing account found. Please fill in your details to get started.
             </Text>
@@ -242,36 +247,48 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 72,
     height: 72,
-    borderRadius: 36,
+    borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
-  title: {
-    fontSize: 24,
+  // vD1: Burmese leads — MM title is primary (larger, bold, MM font)
+  titleMM: {
+    fontSize: mmFontSize(24),
+    fontFamily: mmFontFamily('bold'),
     fontWeight: '800' as const,
     color: '#FFFFFF',
     textAlign: 'center',
+    lineHeight: 32,
   },
-  titleMM: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.75)',
-    marginTop: 4,
+  title: {
+    fontSize: 17,
+    fontWeight: '700' as const,
+    color: 'rgba(255,255,255,0.92)',
     textAlign: 'center',
+    marginTop: 4,
+  },
+  subtitleMM: {
+    fontSize: mmFontSize(14),
+    fontFamily: mmFontFamily('regular'),
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 22,
   },
   subtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.92)',
     textAlign: 'center',
-    marginTop: 10,
-    lineHeight: 20,
+    marginTop: 2,
+    lineHeight: 18,
   },
   bottomSection: {
     flex: 1,
     backgroundColor: Colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   formContent: {
     padding: 24,
@@ -287,7 +304,7 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: Colors.background,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
@@ -301,7 +318,7 @@ const styles = StyleSheet.create({
   },
   phoneDisplay: {
     backgroundColor: Colors.background,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderWidth: 1.5,
@@ -323,7 +340,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: Colors.background,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderWidth: 1.5,
@@ -341,7 +358,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     maxHeight: 220,
     backgroundColor: Colors.surface,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.border,
   },

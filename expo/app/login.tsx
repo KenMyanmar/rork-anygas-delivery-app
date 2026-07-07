@@ -20,6 +20,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Flame, Phone, ArrowRight, Shield } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { useAuth } from '@/providers/AuthProvider';
 import { useI18n } from '@/providers/I18nProvider';
 import { router } from 'expo-router';
@@ -170,16 +171,20 @@ export default function LoginScreen() {
         >
           {step === 'phone' ? (
             <>
+              {/* vD1: Burmese leads — MM on top and larger, EN is the subtitle */}
+              <Text style={styles.formTitleMM}>
+                {prefilledPhone ? 'ပြန်လည် ကြိုဆိုပါတယ်' : 'ကြိုဆိုပါတယ်'}
+              </Text>
               <Text style={styles.formTitle}>
                 {prefilledPhone ? t('welcome_back') : 'Welcome'}
+              </Text>
+              <Text style={styles.formSubtitleMM}>
+                {prefilledPhone ? 'OTP ပို့ရန် တစ်ချက်နှိပ်ပါ' : 'ဖုန်းနံပါတ် ထည့်သွင်းပါ'}
               </Text>
               <Text style={styles.formSubtitle}>
                 {prefilledPhone
                   ? t('welcome_back_sub')
                   : 'Enter your phone number to get started'}
-              </Text>
-              <Text style={styles.formSubtitleMM}>
-                {prefilledPhone ? 'OTP ပို့ရန် တစ်ချက်နှိပ်ပါ' : 'ဖုန်းနံပါတ် ထည့်သွင်းပါ'}
               </Text>
 
               <View style={styles.inputGroup}>
@@ -234,12 +239,16 @@ export default function LoginScreen() {
             </>
           ) : (
             <>
+              {/* vD1: Burmese leads — MM on top and larger */}
+              <Text style={styles.formTitleMM}>
+                ကုဒ်နံပါတ် ၆ လုံး ထည့်ပါ
+              </Text>
               <Text style={styles.formTitle}>Verify OTP</Text>
+              <Text style={styles.formSubtitleMM}>
+                {phone} သို့ ပို့ထားသော ကုဒ် ထည့်ပါ
+              </Text>
               <Text style={styles.formSubtitle}>
                 Enter the 6-digit code sent to {phone}
-              </Text>
-              <Text style={styles.formSubtitleMM}>
-                ကုဒ်နံပါတ် ၆ လုံး ထည့်ပါ
               </Text>
 
               <TextInput
@@ -310,7 +319,7 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 96,
     height: 96,
-    borderRadius: 48,
+    borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -325,41 +334,53 @@ const styles = StyleSheet.create({
   brandNumber: {
     fontSize: 20,
     fontWeight: '600' as const,
-    color: 'rgba(255,255,255,0.8)',
+    color: 'rgba(255,255,255,0.92)',
     marginTop: -4,
     letterSpacing: 4,
   },
   brandTagline: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    fontFamily: mmFontFamily('medium'),
+    color: 'rgba(255,255,255,0.92)',
     marginTop: 8,
   },
   formCard: {
     flex: 1,
     backgroundColor: Colors.surface,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   formContent: {
     paddingHorizontal: 28,
     paddingTop: 36,
     paddingBottom: 40,
   },
-  formTitle: {
-    fontSize: 28,
+  // vD1: Burmese leads — MM title is primary (larger, bold, MM font)
+  formTitleMM: {
+    fontSize: 26,
+    fontFamily: mmFontFamily('bold'),
     fontWeight: '700' as const,
     color: Colors.textPrimary,
-    marginBottom: 8,
+    marginBottom: 4,
+    lineHeight: 34,
   },
-  formSubtitle: {
-    fontSize: 15,
+  formTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
     color: Colors.textSecondary,
-    lineHeight: 22,
+    marginBottom: 12,
   },
   formSubtitleMM: {
+    fontSize: mmFontSize(15),
+    fontFamily: mmFontFamily('regular'),
+    color: Colors.textSecondary,
+    lineHeight: 24,
+    marginBottom: 2,
+  },
+  formSubtitle: {
     fontSize: 14,
     color: Colors.textTertiary,
-    marginTop: 2,
+    lineHeight: 20,
     marginBottom: 28,
   },
   inputGroup: {
@@ -374,7 +395,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     paddingHorizontal: 14,
     paddingVertical: 16,
-    borderRadius: 14,
+    borderRadius: 12,
     gap: 6,
     borderWidth: 1.5,
     borderColor: Colors.border,
@@ -390,7 +411,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     paddingHorizontal: 16,
     paddingVertical: 16,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.border,
     letterSpacing: 1,
@@ -402,7 +423,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     paddingHorizontal: 20,
     paddingVertical: 18,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.border,
     letterSpacing: 8,
@@ -438,10 +459,13 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: '#FFFFFF',
   },
+  // vD1: 44pt touch floor for back link
   backLink: {
     alignItems: 'center',
     marginTop: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   backLinkText: {
     fontSize: 14,
@@ -458,10 +482,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   // vC15 Task B: "Not you?" link
+  // vD1: 44pt touch floor for not-you link
   notYouLink: {
     alignItems: 'center',
     marginTop: 14,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   notYouText: {
     fontSize: 13,

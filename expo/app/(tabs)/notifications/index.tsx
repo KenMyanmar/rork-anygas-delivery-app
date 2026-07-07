@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 80,
     height: 80,
-    borderRadius: 40,
+    borderRadius: 999,
     backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',

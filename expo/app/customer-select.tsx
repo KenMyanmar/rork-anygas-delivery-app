@@ -13,6 +13,7 @@ import { User, MapPin, Phone, Flame } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
+import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { useAuth } from '@/providers/AuthProvider';
 import { Customer } from '@/types';
 
@@ -66,8 +67,12 @@ export default function CustomerSelectScreen() {
             <View style={styles.logoCircle}>
               <Flame size={32} color="#FFFFFF" strokeWidth={2.5} />
             </View>
-            <Text style={styles.title}>Select Your Profile</Text>
+            {/* vD1: Burmese leads — MM on top and larger */}
             <Text style={styles.titleMM}>သင့်ပရိုဖိုင်ကို ရွေးချယ်ပါ</Text>
+            <Text style={styles.title}>Select Your Profile</Text>
+            <Text style={styles.subtitleMM}>
+              ဤဖုန်းနံပါတ်ဖြင့် အကောင့်များစွာ တွေ့ပါသည်။ သင့်ပရိုဖိုင်ကို ရွေးချယ်ပါ။
+            </Text>
             <Text style={styles.subtitle}>
               Multiple accounts found with your phone number. Please select which profile is yours.
             </Text>
@@ -109,36 +114,48 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 72,
     height: 72,
-    borderRadius: 36,
+    borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
-  title: {
-    fontSize: 24,
+  // vD1: Burmese leads — MM title is primary (larger, bold, MM font)
+  titleMM: {
+    fontSize: mmFontSize(24),
+    fontFamily: mmFontFamily('bold'),
     fontWeight: '800' as const,
     color: '#FFFFFF',
     textAlign: 'center',
+    lineHeight: 32,
   },
-  titleMM: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.75)',
-    marginTop: 4,
+  title: {
+    fontSize: 17,
+    fontWeight: '700' as const,
+    color: 'rgba(255,255,255,0.92)',
     textAlign: 'center',
+    marginTop: 4,
+  },
+  subtitleMM: {
+    fontSize: mmFontSize(14),
+    fontFamily: mmFontFamily('regular'),
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 22,
   },
   subtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.92)',
     textAlign: 'center',
-    marginTop: 10,
-    lineHeight: 20,
+    marginTop: 2,
+    lineHeight: 18,
   },
   bottomSection: {
     flex: 1,
     backgroundColor: Colors.background,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   listContent: {
     padding: 20,
@@ -149,7 +166,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.surface,
     padding: 18,
-    borderRadius: 18,
+    borderRadius: 20,
     gap: 14,
     borderWidth: 1.5,
     borderColor: Colors.borderLight,
@@ -162,7 +179,7 @@ const styles = StyleSheet.create({
   avatarWrap: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: 999,
     backgroundColor: Colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
