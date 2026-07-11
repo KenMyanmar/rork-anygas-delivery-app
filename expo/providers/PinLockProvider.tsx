@@ -19,6 +19,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
 import createContextHook from '@nkzw/create-context-hook';
+import { devLog } from '@/lib/logger';
 
 const PIN_HASH_KEY = 'anygas_pin_hash';
 const PIN_SALT_KEY = 'anygas_pin_salt';
@@ -27,6 +28,7 @@ const PIN_ATTEMPTS_KEY = 'anygas_pin_attempts'; // vC15 Task C: persisted attemp
 const LAST_PHONE_KEY = 'anygas_last_phone'; // vC15 Task B: welcome-back prefill (AsyncStorage, not SecureStore)
 const PARKED_SESSION_KEY = 'anygas_parked_session'; // vC16 Task A: parked session (cleared on wipe)
 const PARKED_ACCOUNT_KEY = 'anygas_parked_account'; // vC16 Task A: parked account metadata
+const PARKED_CUSTOMER_KEY = 'anygas_parked_customer';
 const BACKGROUND_THRESHOLD_MS = 60_000; // lock after >60s in background
 const MAX_PIN_ATTEMPTS = 5;
 
@@ -63,7 +65,7 @@ async function verifyPin(pin: string): Promise<boolean> {
     const { hash } = await hashPin(pin, salt);
     return hash === storedHash;
   } catch (e) {
-    console.log('[PinLock] verifyPin error:', e);
+    devLog('[PinLock] verifyPin error:', e);
     return false;
   }
 }
@@ -90,9 +92,10 @@ async function clearPin(): Promise<void> {
     // vC16 Task A: wipe parked session + account metadata on every PIN clear.
     await SecureStore.deleteItemAsync(PARKED_SESSION_KEY);
     await SecureStore.deleteItemAsync(PARKED_ACCOUNT_KEY);
-    console.log('[PinLock] PIN cleared (+ parked session wiped)');
+    await SecureStore.deleteItemAsync(PARKED_CUSTOMER_KEY);
+    devLog('[PinLock] PIN cleared (+ parked session wiped)');
   } catch (e) {
-    console.log('[PinLock] clearPin error:', e);
+    devLog('[PinLock] clearPin error:', e);
   }
 }
 
@@ -110,7 +113,7 @@ async function setStoredAttempts(n: number): Promise<void> {
   try {
     await SecureStore.setItemAsync(PIN_ATTEMPTS_KEY, String(n));
   } catch (e) {
-    console.log('[PinLock] setStoredAttempts error:', e);
+    devLog('[PinLock] setStoredAttempts error:', e);
   }
 }
 
@@ -118,7 +121,7 @@ async function clearStoredAttempts(): Promise<void> {
   try {
     await SecureStore.deleteItemAsync(PIN_ATTEMPTS_KEY);
   } catch (e) {
-    console.log('[PinLock] clearStoredAttempts error:', e);
+    devLog('[PinLock] clearStoredAttempts error:', e);
   }
 }
 
@@ -164,7 +167,7 @@ async function authenticateBiometric(
     });
     return result.success;
   } catch (e) {
-    console.log('[PinLock] Biometric auth error:', e);
+    devLog('[PinLock] Biometric auth error:', e);
     return false;
   }
 }
@@ -178,12 +181,12 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
 
   // Initialize: check if PIN is set, load biometric prefs, load persisted attempts
   const initialize = useCallback(async () => {
-    console.log('[PinLock] Initializing...');
+    devLog('[PinLock] Initializing...');
     // vC15.1 — PIN lock is a native-only feature. On web (browser preview),
     // bypass entirely: no SecureStore reads, no setup, no lock screen. The web
     // preview exists for layout checks only; PIN behavior is tested on device.
     if (Platform.OS === 'web') {
-      console.log('[PinLock] web platform → unlocked (PIN lock is native-only)');
+      devLog('[PinLock] web platform → unlocked (PIN lock is native-only)');
       setBiometricAvailable(false);
       setLockState('unlocked');
       return;
@@ -193,7 +196,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
     setBiometricAvailable(bioAvail);
 
     if (!hasPin) {
-      console.log('[PinLock] No PIN set → state=no_pin');
+      devLog('[PinLock] No PIN set → state=no_pin');
       setLockState('no_pin');
       return;
     }
@@ -203,7 +206,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
     // vC15 Task C: restore persisted attempt counter so restart doesn't reset it
     const storedAttempts = await getStoredAttempts();
     setAttempts(storedAttempts);
-    console.log('[PinLock] PIN exists, biometric pref:', bioPref, 'stored attempts:', storedAttempts);
+    devLog('[PinLock] PIN exists, biometric pref:', bioPref, 'stored attempts:', storedAttempts);
     setLockState('locked');
   }, []);
 
@@ -212,13 +215,13 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState === 'background' || nextState === 'inactive') {
         backgroundTimeRef.current = Date.now();
-        console.log('[PinLock] App went background at', backgroundTimeRef.current);
+        devLog('[PinLock] App went background at', backgroundTimeRef.current);
       } else if (nextState === 'active' && backgroundTimeRef.current !== null) {
         const elapsed = Date.now() - backgroundTimeRef.current;
         backgroundTimeRef.current = null;
-        console.log('[PinLock] App returned to active after', elapsed, 'ms');
+        devLog('[PinLock] App returned to active after', elapsed, 'ms');
         if (elapsed > BACKGROUND_THRESHOLD_MS && lockState === 'unlocked') {
-          console.log('[PinLock] Background >60s → locking');
+          devLog('[PinLock] Background >60s → locking');
           setLockState('locked');
           setAttempts(0);
         }
@@ -235,18 +238,18 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
   /** Set up a new PIN (setup flow). Stores salted hash in SecureStore. */
   const setupPin = useCallback(async (pin: string): Promise<boolean> => {
     if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-      console.log('[PinLock] setupPin: invalid PIN');
+      devLog('[PinLock] setupPin: invalid PIN');
       return false;
     }
     try {
       await storePinHash(pin);
       await clearStoredAttempts(); // vC15 Task C
-      console.log('[PinLock] PIN set up successfully');
+      devLog('[PinLock] PIN set up successfully');
       setAttempts(0);
       setLockState('unlocked');
       return true;
     } catch (e) {
-      console.log('[PinLock] setupPin error:', e);
+      devLog('[PinLock] setupPin error:', e);
       return false;
     }
   }, []);
@@ -263,7 +266,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
   ): Promise<{ success: boolean; attemptsLeft: number; lockedOut: boolean }> => {
     const valid = await verifyPin(pin);
     if (valid) {
-      console.log('[PinLock] PIN correct → unlocked');
+      devLog('[PinLock] PIN correct → unlocked');
       setAttempts(0);
       await clearStoredAttempts();
       setLockState('unlocked');
@@ -275,10 +278,10 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
     const newAttempts = currentStored + 1;
     await setStoredAttempts(newAttempts);
     setAttempts(newAttempts);
-    console.log('[PinLock] Wrong PIN, attempt', newAttempts, 'of', MAX_PIN_ATTEMPTS, '(persisted)');
+    devLog('[PinLock] Wrong PIN, attempt', newAttempts, 'of', MAX_PIN_ATTEMPTS, '(persisted)');
 
     if (newAttempts >= MAX_PIN_ATTEMPTS) {
-      console.log('[PinLock] 5 wrong attempts → lockout: clear PIN + sign out');
+      devLog('[PinLock] 5 wrong attempts → lockout: clear PIN + sign out');
       await clearPin();
       setAttempts(0);
       setLockState('no_pin');
@@ -302,7 +305,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
     if (!biometricEnabled || !biometricAvailable) return false;
     const success = await authenticateBiometric(promptMessage);
     if (success) {
-      console.log('[PinLock] Biometric unlock success');
+      devLog('[PinLock] Biometric unlock success');
       setAttempts(0);
       await clearStoredAttempts(); // vC15 Task C
       setLockState('unlocked');
@@ -313,12 +316,12 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
   /** Toggle biometric unlock preference (only if device supports it). */
   const toggleBiometric = useCallback(async (enabled: boolean): Promise<void> => {
     if (enabled && !biometricAvailable) {
-      console.log('[PinLock] Cannot enable biometric — not available');
+      devLog('[PinLock] Cannot enable biometric — not available');
       return;
     }
     await setBiometricPref(enabled);
     setBiometricEnabled(enabled);
-    console.log('[PinLock] Biometric preference set to', enabled);
+    devLog('[PinLock] Biometric preference set to', enabled);
   }, [biometricAvailable]);
 
   /**
@@ -326,7 +329,7 @@ export const [PinLockProvider, usePinLock] = createContextHook(() => {
    * Returns void; the caller performs the signOut.
    */
   const forgotPin = useCallback(async (): Promise<void> => {
-    console.log('[PinLock] Forgot PIN → clearing PIN + resetting to no_pin');
+    devLog('[PinLock] Forgot PIN → clearing PIN + resetting to no_pin');
     await clearPin();
     setAttempts(0);
     setLockState('no_pin');

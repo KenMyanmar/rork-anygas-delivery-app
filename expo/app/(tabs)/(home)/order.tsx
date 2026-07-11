@@ -71,6 +71,7 @@ import {
 import { fetchCatalog, displayBrandName, CatalogEntry } from '@/lib/catalog';
 import { fetchEquipmentBundles, bundleBrandLabel, computeComponentValue } from '@/lib/bundles';
 import { useI18n } from '@/providers/I18nProvider';
+import { devLog } from '@/lib/logger';
 import {
   ScalePressable,
   Skeleton,
@@ -225,7 +226,7 @@ export default function OrderScreen() {
   const catalogQuery = useQuery({
     queryKey: ['catalog'],
     queryFn: async () => {
-      console.log('[Order] Fetching catalog via catalog-list');
+      devLog('[Order] Fetching catalog via catalog-list');
       return await fetchCatalog();
     },
   });
@@ -236,7 +237,7 @@ export default function OrderScreen() {
   const bundlesQuery = useQuery({
     queryKey: ['equipment_bundles'],
     queryFn: async () => {
-      console.log('[Order] Fetching equipment_bundles');
+      devLog('[Order] Fetching equipment_bundles');
       return await fetchEquipmentBundles();
     },
   });
@@ -530,7 +531,7 @@ export default function OrderScreen() {
       setShowSuccess(true);
     } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : t('order_failed');
-      console.log('[Order] Error placing order:', errorMessage);
+      devLog('[Order] Error placing order:', errorMessage);
       // NS-2: handle bundle_not_available (promotion ended mid-flow).
       if (errorMessage === 'bundle_not_available') {
         Alert.alert(
@@ -1449,7 +1450,7 @@ export default function OrderScreen() {
       return true;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : (isMM ? 'လိပ်စာ သိမ်းဆည်၍ မရပါ' : 'Failed to save address');
-      console.log('[Order] Address save error:', msg);
+      devLog('[Order] Address save error:', msg);
       setAddressSaveError(msg);
       if (Platform.OS !== 'web') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -1472,7 +1473,7 @@ export default function OrderScreen() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setLocationStatus('denied');
-        console.log('[Order] Location permission denied');
+        devLog('[Order] Location permission denied');
         return;
       }
       const pos = await Location.getCurrentPositionAsync({
@@ -1481,12 +1482,12 @@ export default function OrderScreen() {
       setPendingGpsLat(pos.coords.latitude);
       setPendingGpsLng(pos.coords.longitude);
       setLocationStatus('saved');
-      console.log('[Order] GPS captured:', pos.coords.latitude, pos.coords.longitude);
+      devLog('[Order] GPS captured:', pos.coords.latitude, pos.coords.longitude);
       if (Platform.OS !== 'web') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (e) {
-      console.log('[Order] Location error:', e);
+      devLog('[Order] Location error:', e);
       setLocationStatus('denied');
     }
   }, []);

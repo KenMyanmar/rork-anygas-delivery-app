@@ -24,6 +24,7 @@ import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { useAuth } from '@/providers/AuthProvider';
 import { useI18n } from '@/providers/I18nProvider';
 import { router } from 'expo-router';
+import { devLog } from '@/lib/logger';
 
 const LAST_PHONE_KEY = 'anygas_last_phone'; // vC15 Task B
 
@@ -57,19 +58,19 @@ export default function LoginScreen() {
       try {
         const stored = await AsyncStorage.getItem(LAST_PHONE_KEY);
         if (stored && stored.length >= 6) {
-          console.log('[Login] Welcome-back prefill loaded:', stored);
+          devLog('[Login] Welcome-back prefill loaded:', stored);
           setPhone(stored);
           setPrefilledPhone(stored);
         }
       } catch (e) {
-        console.log('[Login] Failed to load prefill phone:', e);
+        devLog('[Login] Failed to load prefill phone:', e);
       }
     })();
   }, []);
 
   // vC15 Task B: "Not you?" clears the prefill and shows the empty form.
   const handleNotYou = useCallback(() => {
-    console.log('[Login] Clearing prefill — user wants another number');
+    devLog('[Login] Clearing prefill — user wants another number');
     setPhone('');
     setPrefilledPhone(null);
     setErrorMsg('');
@@ -91,10 +92,10 @@ export default function LoginScreen() {
         setPrefilledPhone(phone);
       }
       setStep('otp');
-      console.log('[Login] OTP sent to:', phone);
+      devLog('[Login] OTP sent to:', phone);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Failed to send OTP. Please try again.';
-      console.log('[Login] OTP send error:', message);
+      devLog('[Login] OTP send error:', message);
       setErrorMsg(message);
       Alert.alert('Error', message);
     } finally {
@@ -111,23 +112,23 @@ export default function LoginScreen() {
     setErrorMsg('');
     try {
       const result = await verifyOtp(phone, otp);
-      console.log('[Login] OTP verified, linking state:', result.linkingState);
+      devLog('[Login] OTP verified, linking state:', result.linkingState);
 
       if (result.linkingState === 'linked') {
-        console.log('[Login] Customer auto-linked, going home');
+        devLog('[Login] Customer auto-linked, going home');
         router.replace('/');
       } else if (result.linkingState === 'select_profile') {
-        console.log('[Login] Multiple customers found, showing picker');
+        devLog('[Login] Multiple customers found, showing picker');
         router.replace('/customer-select');
       } else if (result.linkingState === 'register_new') {
-        console.log('[Login] No customer found, showing registration');
+        devLog('[Login] No customer found, showing registration');
         router.replace('/customer-register');
       } else {
         router.replace('/');
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Invalid OTP. Please try again.';
-      console.log('[Login] OTP verify error:', message);
+      devLog('[Login] OTP verify error:', message);
       setErrorMsg(message);
       Alert.alert('Verification Failed', message);
     } finally {
@@ -204,6 +205,8 @@ export default function LoginScreen() {
                   }}
                   maxLength={14}
                   testID="phone-input"
+                  accessibilityLabel="Myanmar phone number"
+                  accessibilityHint="Enter the phone number that will receive your login code"
                 />
               </View>
 
@@ -215,6 +218,8 @@ export default function LoginScreen() {
                 disabled={phone.length < 6 || isLoading}
                 activeOpacity={0.8}
                 testID="send-otp-button"
+                accessibilityRole="button"
+                accessibilityLabel="Send login code"
               >
                 {isLoading ? (
                   <ActivityIndicator color="#FFFFFF" />
@@ -232,6 +237,8 @@ export default function LoginScreen() {
                   style={styles.notYouLink}
                   onPress={handleNotYou}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('not_you')}
                 >
                   <Text style={styles.notYouText}>{t('not_you')}</Text>
                 </TouchableOpacity>
@@ -261,6 +268,7 @@ export default function LoginScreen() {
                 maxLength={6}
                 textAlign="center"
                 testID="otp-input"
+                accessibilityLabel="Six digit login code"
               />
 
               {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
@@ -271,6 +279,8 @@ export default function LoginScreen() {
                 disabled={otp.length < 4 || isLoading}
                 activeOpacity={0.8}
                 testID="verify-otp-button"
+                accessibilityRole="button"
+                accessibilityLabel="Verify code and log in"
               >
                 {isLoading ? (
                   <ActivityIndicator color="#FFFFFF" />
@@ -285,17 +295,24 @@ export default function LoginScreen() {
               <TouchableOpacity
                 style={styles.backLink}
                 onPress={() => { setStep('phone'); setOtp(''); setErrorMsg(''); }}
+                accessibilityRole="button"
+                accessibilityLabel="Change phone number"
               >
                 <Text style={styles.backLinkText}>Change phone number</Text>
               </TouchableOpacity>
             </>
           )}
 
-          <View style={styles.termsRow}>
+          <TouchableOpacity
+            style={styles.termsRow}
+            onPress={() => router.push({ pathname: '/legal', params: { type: 'terms' } })}
+            accessibilityRole="link"
+            accessibilityLabel="Read the AnyGas Terms of Service"
+          >
             <Text style={styles.termsText}>
               By continuing, you agree to our Terms of Service
             </Text>
-          </View>
+          </TouchableOpacity>
         </ScrollView>
       </Animated.View>
     </KeyboardAvoidingView>

@@ -28,6 +28,7 @@ import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { useAuth } from '@/providers/AuthProvider';
 import { useI18n } from '@/providers/I18nProvider';
 import { YANGON_TOWNSHIPS } from '@/constants/townships';
+import { devLog } from '@/lib/logger';
 
 export default function CustomerRegisterScreen() {
   const { registerNewCustomer, phoneNumber } = useAuth();
@@ -54,7 +55,7 @@ export default function CustomerRegisterScreen() {
     }
     setIsSubmitting(true);
     try {
-      console.log('[CustomerRegister] Submitting new customer:', name);
+      devLog('[CustomerRegister] Submitting new customer:', name);
       await registerNewCustomer({
         name: name.trim(),
         phone: formattedPhone || phoneNumber,
@@ -62,14 +63,14 @@ export default function CustomerRegisterScreen() {
         address: address.trim(),
         landmark: landmark.trim() || null,
       });
-      console.log('[CustomerRegister] Customer registered, navigating home');
+      devLog('[CustomerRegister] Customer registered, navigating home');
       if (Platform.OS !== 'web') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       router.replace('/');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Registration failed. Please try again.';
-      console.log('[CustomerRegister] Error:', message);
+      devLog('[CustomerRegister] Error:', message);
       Alert.alert('Registration Error', message);
     } finally {
       setIsSubmitting(false);

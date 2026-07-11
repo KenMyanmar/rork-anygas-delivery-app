@@ -52,6 +52,7 @@ function RootLayoutNav() {
       <Stack.Screen name="pin-lock" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="account-tile" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="edit-address" options={{ headerShown: false, presentation: "modal" }} />
+      <Stack.Screen name="legal" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="+not-found" />
     </Stack>
   );

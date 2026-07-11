@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "rork-app",
+    "scheme": "anygas8484",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -31,12 +31,18 @@
       [
         "expo-router",
         {
-          "origin": "https://rork.com/"
+          "origin": "https://www.anygas.org/"
         }
       ],
       "expo-font",
       "expo-web-browser",
       "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow AnyGas 8484 to use Face ID to unlock your account securely."
+        }
+      ],
       [
         "expo-location",
         {
