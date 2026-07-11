@@ -148,6 +148,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { customerId, session } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const notifications: never[] = [];
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
 
   const ordersQuery = useQuery({
@@ -385,6 +386,19 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
   // on every call. Customer-side status changes are not permitted by design —
   // status transitions are owned by the agent/CRM flows. The client reads only.
 
+  // Approved A2 interim: ratings remain local until the shared-backend plan
+  // writes to order_ratings. Customer-scoped storage prevents account crossover.
+  const rateOrder = useCallback(async (orderId: string, rating: number, comment?: string) => {
+    devLog('[Orders] Rating order (UI-only, pending A2):', orderId, 'stars:', rating);
+    const updated = orders.map(o =>
+      o.id === orderId ? { ...o, rating, ratingComment: comment } : o
+    );
+    setOrders(updated);
+    if (customerId) {
+      await AsyncStorage.setItem(ordersStorageKey(customerId), JSON.stringify(updated));
+    }
+  }, [orders, customerId]);
+
   const getLastOrder = useCallback(() => {
     return orders[0] || null;
   }, [orders]);
@@ -404,15 +418,25 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     return orders.find(o => ['new', 'in_progress', 'confirmed', 'dispatched'].includes(o.status)) || null;
   }, [orders]);
 
+  const markNotificationRead = useCallback(async (_id: string) => {
+    devLog('[Orders] Notifications not yet available');
+  }, []);
+
+  const unreadCount = 0;
+
   return {
     orders,
+    notifications,
     activeOrderId,
     setActiveOrderId,
     placeOrder,
     placeBundleOrder,
+    rateOrder,
     getLastOrder,
     getLastDeliveredOrder,
     getActiveOrder,
+    markNotificationRead,
+    unreadCount,
     isLoadingOrders: ordersQuery.isLoading,
   };
 });
