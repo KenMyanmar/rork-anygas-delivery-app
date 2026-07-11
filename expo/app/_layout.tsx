@@ -53,6 +53,7 @@ function RootLayoutNav() {
       <Stack.Screen name="account-tile" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="edit-address" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="legal" options={{ headerShown: false, presentation: "modal" }} />
+      <Stack.Screen name="delete-account" options={{ headerShown: false, presentation: "modal", gestureEnabled: false }} />
       <Stack.Screen name="+not-found" />
     </Stack>
   );
