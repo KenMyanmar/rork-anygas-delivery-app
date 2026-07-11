@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import {
   User,
@@ -105,6 +106,18 @@ export default function ProfileScreen() {
     router.push('/edit-address');
   }, []);
 
+  const handlePrivacy = useCallback(() => {
+    router.push({ pathname: '/legal', params: { type: 'privacy' } });
+  }, []);
+
+  const handleTerms = useCallback(() => {
+    router.push({ pathname: '/legal', params: { type: 'terms' } });
+  }, []);
+
+  const handleSupport = useCallback(() => {
+    Linking.openURL('tel:8484');
+  }, []);
+
   return (
     <ScrollView
       style={styles.container}
@@ -142,6 +155,8 @@ export default function ProfileScreen() {
             style={styles.addressCard}
             onPress={handleEditAddress}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('delivery_address')}
           >
             <View style={styles.addressIcon}>
               <MapPin size={16} color={Colors.primary} />
@@ -175,6 +190,8 @@ export default function ProfileScreen() {
             style={styles.addAddressCard}
             onPress={handleEditAddress}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('add_delivery_address')}
           >
             <View style={styles.addAddressIcon}>
               <MapPin size={20} color={Colors.primary} />
@@ -230,6 +247,9 @@ export default function ProfileScreen() {
               style={[styles.langBtn, isMM && styles.langBtnActive]}
               onPress={() => changeLanguage('mm')}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isMM }}
+              accessibilityLabel="မြန်မာဘာသာ"
             >
               <Text style={[styles.langBtnText, isMM && styles.langBtnTextActive]}>မြန်မာ</Text>
             </TouchableOpacity>
@@ -237,6 +257,9 @@ export default function ProfileScreen() {
               style={[styles.langBtn, isEN && styles.langBtnActive]}
               onPress={() => changeLanguage('en')}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isEN }}
+              accessibilityLabel="English"
             >
               <Text style={[styles.langBtnText, isEN && styles.langBtnTextActive]}>English</Text>
             </TouchableOpacity>
@@ -245,17 +268,35 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.section}>
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          activeOpacity={0.7}
+          onPress={handlePrivacy}
+          accessibilityRole="button"
+          accessibilityLabel={t('privacy_security')}
+        >
           <Shield size={20} color={Colors.textSecondary} />
           <Text style={styles.menuItemText}>{t('privacy_security')}</Text>
           <ChevronRight size={18} color={Colors.textTertiary} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          activeOpacity={0.7}
+          onPress={handleSupport}
+          accessibilityRole="button"
+          accessibilityLabel={t('help_support')}
+        >
           <HelpCircle size={20} color={Colors.textSecondary} />
           <Text style={styles.menuItemText}>{t('help_support')}</Text>
           <ChevronRight size={18} color={Colors.textTertiary} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          activeOpacity={0.7}
+          onPress={handleTerms}
+          accessibilityRole="button"
+          accessibilityLabel={t('terms')}
+        >
           <FileText size={20} color={Colors.textSecondary} />
           <Text style={styles.menuItemText}>{t('terms')}</Text>
           <ChevronRight size={18} color={Colors.textTertiary} />
@@ -267,6 +308,8 @@ export default function ProfileScreen() {
         style={styles.lockButton}
         onPress={handleLockApp}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={t('lock_app')}
       >
         <Lock size={20} color={Colors.primary} />
         <View style={styles.lockButtonTextWrap}>
@@ -280,6 +323,8 @@ export default function ProfileScreen() {
         style={styles.logoutLink}
         onPress={handleSignOut}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={t('sign_out_soft')}
       >
         <LogOut size={16} color={Colors.textTertiary} />
         <Text style={styles.logoutLinkText}>{t('sign_out_soft')}</Text>
@@ -290,6 +335,8 @@ export default function ProfileScreen() {
         style={styles.removeAccountLink}
         onPress={handleRemoveAccount}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={t('remove_account')}
       >
         <Trash2 size={15} color={Colors.error} />
         <Text style={styles.removeAccountText}>{t('remove_account')}</Text>

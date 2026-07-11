@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,6 @@ import {
   Clock,
   CheckCircle,
   Circle,
-  Star,
   Package,
   XCircle,
   AlertTriangle,
@@ -87,10 +86,6 @@ export default function TrackingScreen() {
   // (assigned_agent_id / agent_name / agent_phone) that don't exist on orders.
   // Live agent display + call arrives with Lane 2 item 5 (realtime tracking).
   // The 8484 hotline remains available on the failed-delivery terminal state.
-  const handleRate = useCallback(() => {
-    router.push('/(tabs)/(home)/rating');
-  }, []);
-
   if (!activeOrder) {
     return (
       <View style={styles.container}>
@@ -287,17 +282,6 @@ export default function TrackingScreen() {
             </View>
           </View>
 
-          {!isTerminal && activeOrder.status === 'delivered' && !activeOrder.rating && (
-            <TouchableOpacity
-              style={styles.rateButton}
-              onPress={handleRate}
-              activeOpacity={0.85}
-            >
-              <Star size={20} color="#FFFFFF" />
-              <Text style={styles.rateButtonText}>{t('rate_delivery')}</Text>
-            </TouchableOpacity>
-          )}
-
           <View style={{ height: 30 }} />
         </ScrollView>
       </SafeAreaView>
@@ -484,21 +468,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     marginTop: 2,
-  },
-  rateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primary,
-    paddingVertical: 18,
-    borderRadius: 16,
-    gap: 10,
-    marginBottom: 16,
-  },
-  rateButtonText: {
-    fontSize: 17,
-    fontWeight: '700' as const,
-    color: '#FFFFFF',
   },
   emptyState: {
     flex: 1,

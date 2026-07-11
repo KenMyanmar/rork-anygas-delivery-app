@@ -7,7 +7,6 @@ export default function HomeLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="order" options={{ presentation: 'modal', gestureEnabled: true }} />
       <Stack.Screen name="tracking" />
-      <Stack.Screen name="rating" options={{ presentation: 'modal' }} />
     </Stack>
   );
 }

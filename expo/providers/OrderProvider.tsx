@@ -3,12 +3,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { devLog } from '@/lib/logger';
 import { Order } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
 import { fetchCatalog, displayBrandName } from '@/lib/catalog';
 import { fetchEquipmentBundles } from '@/lib/bundles';
 
-const ORDERS_KEY = 'anygas_orders';
+const ORDERS_KEY_PREFIX = 'anygas_orders';
+
+function ordersStorageKey(customerId: string): string {
+  return `${ORDERS_KEY_PREFIX}:${customerId}`;
+}
 
 
 interface EdgeFunctionOrderPayload {
@@ -81,7 +86,7 @@ async function hydrateBrandNameCache(): Promise<void> {
       BRAND_NAME_CACHE.set(entry.brand.id, displayBrandName(entry.brand.name));
     }
   } catch (e) {
-    console.log('[Orders] Brand name hydration failed:', e);
+    devLog('[Orders] Brand name hydration failed:', e);
   }
 }
 
@@ -94,7 +99,7 @@ async function hydrateBundleNameCache(): Promise<void> {
       BUNDLE_NAME_CACHE.set(b.id, b.name);
     }
   } catch (e) {
-    console.log('[Orders] Bundle name hydration failed:', e);
+    devLog('[Orders] Bundle name hydration failed:', e);
   }
 }
 
@@ -143,14 +148,15 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { customerId, session } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
-  const notifications: never[] = [];
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
 
   const ordersQuery = useQuery({
     queryKey: ['orders', customerId],
     queryFn: async () => {
       if (!customerId) return [];
-      console.log('[Orders] Fetching orders for customer:', customerId);
+      const storageKey = ordersStorageKey(customerId);
+      await AsyncStorage.removeItem(ORDERS_KEY_PREFIX);
+      devLog('[Orders] Fetching orders for customer:', customerId);
       const { data, error } = await supabase
         .from('orders')
         .select('*')
@@ -158,8 +164,8 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.log('[Orders] Fetch error, falling back to local:', error.message);
-        const stored = await AsyncStorage.getItem(ORDERS_KEY);
+        devLog('[Orders] Fetch error, falling back to local:', error.message);
+        const stored = await AsyncStorage.getItem(storageKey);
         return stored ? JSON.parse(stored) as Order[] : [];
       }
 
@@ -170,12 +176,12 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
         // NS-2: hydrate bundle names so bundle orders show the package name.
         await hydrateBundleNameCache();
         const mapped: Order[] = (data as SupabaseOrderRow[]).map(mapSupabaseOrderToOrder);
-        console.log('[Orders] Fetched orders from Supabase:', mapped.length);
-        await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(mapped));
+        devLog('[Orders] Fetched orders from Supabase:', mapped.length);
+        await AsyncStorage.setItem(storageKey, JSON.stringify(mapped));
         return mapped;
       }
 
-      const stored = await AsyncStorage.getItem(ORDERS_KEY);
+      const stored = await AsyncStorage.getItem(storageKey);
       return stored ? JSON.parse(stored) as Order[] : [];
     },
     enabled: !!customerId,
@@ -187,6 +193,13 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
       setOrders(ordersQuery.data);
     }
   }, [ordersQuery.data]);
+
+  useEffect(() => {
+    if (!customerId) {
+      setOrders([]);
+      setActiveOrderId(null);
+    }
+  }, [customerId]);
 
   const placeOrder = useCallback(async (orderParams: {
     brandId: string;
@@ -202,7 +215,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     address: Order['address'];
     pricing: Order['pricing'];
   }): Promise<Order> => {
-    console.log('[Orders] Placing order via Edge Function for customer:', customerId);
+    devLog('[Orders] Placing order via Edge Function for customer:', customerId);
 
     const accessToken = session?.access_token;
     if (!accessToken) {
@@ -217,7 +230,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     // charge the refill delivery fee (6000/3000) instead of 0.
     const serverOrderType = orderParams.orderType === 'new_setup' ? 'new' : orderParams.orderType;
 
-    console.log('[Orders] Calling Edge Function:', edgeFunctionUrl);
+    devLog('[Orders] Calling Edge Function:', edgeFunctionUrl);
     const response = await fetch(edgeFunctionUrl, {
       method: 'POST',
       headers: {
@@ -236,7 +249,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     });
 
     const result = await response.json();
-    console.log('[Orders] Edge Function response status:', response.status, 'result:', JSON.stringify(result));
+    devLog('[Orders] Edge Function response status:', response.status, 'result:', JSON.stringify(result));
 
     if (!response.ok) {
       // 409 = server recomputed total differs from clientTotal by >1% (price changed mid-flow).
@@ -246,16 +259,16 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
         const msg = serverTotal != null
           ? `Price changed (server total ${Math.round(serverTotal).toLocaleString()} MMK). Please review and try again.`
           : 'Price changed since you opened the order. Please review and try again.';
-        console.log('[Orders] 409 price mismatch:', JSON.stringify(result));
+        devLog('[Orders] 409 price mismatch:', JSON.stringify(result));
         throw new Error(msg);
       }
       const errorMsg = result?.error || result?.message || 'Failed to place order';
-      console.log('[Orders] Edge Function error:', errorMsg);
+      devLog('[Orders] Edge Function error:', errorMsg);
       throw new Error(errorMsg);
     }
 
     const createdOrder = result.order || result;
-    console.log('[Orders] Edge Function success, order ID:', createdOrder?.id);
+    devLog('[Orders] Edge Function success, order ID:', createdOrder?.id);
 
     const newOrder: Order = {
       id: createdOrder.id || `ord_${Date.now()}`,
@@ -298,7 +311,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     paymentMethod: string;
     address: Order['address'];
   }): Promise<Order> => {
-    console.log('[Orders] Placing BUNDLE order for bundle:', bundleParams.bundleId);
+    devLog('[Orders] Placing BUNDLE order for bundle:', bundleParams.bundleId);
     const accessToken = session?.access_token;
     if (!accessToken) {
       throw new Error('Not authenticated. Please log in again.');
@@ -320,7 +333,7 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
       }),
     });
     const result = await response.json();
-    console.log('[Orders] Bundle EF response status:', response.status, 'result:', JSON.stringify(result));
+    devLog('[Orders] Bundle EF response status:', response.status, 'result:', JSON.stringify(result));
     if (!response.ok) {
       // bundle_not_available (400) — promotion ended mid-flow.
       if (response.status === 400 && (result?.error?.includes?.('bundle') || result?.error?.includes?.('unavailable') || result?.error?.includes?.('not available'))) {
@@ -372,24 +385,6 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
   // on every call. Customer-side status changes are not permitted by design —
   // status transitions are owned by the agent/CRM flows. The client reads only.
 
-  // vC12 #2: UI-only, local pending state. The previous implementation wrote to
-  // `orders.rating` / `orders.rating_comment` — columns that do NOT exist in prod
-  // (verified via information_schema). The write silently failed (error logged,
-  // swallowed) on every attempt, and `order_ratings` is at 0 rows. Until the A2
-  // Grand Plan repoints this at `order_ratings` (with RLS review), we keep the
-  // rating UI functional but perform NO server write. The rating is persisted
-  // locally via AsyncStorage so the UI reflects the user's choice within the app.
-  const rateOrder = useCallback(async (orderId: string, rating: number, comment?: string) => {
-    console.log('[Orders] Rating order (UI-only, pending A2):', orderId, 'stars:', rating);
-    const updated = orders.map(o =>
-      o.id === orderId ? { ...o, rating, ratingComment: comment } : o
-    );
-    setOrders(updated);
-    await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
-    // Intentionally no `supabase.fromUpdate('orders', { rating, ... })` call —
-    // those columns don't exist. A2 will write to `order_ratings` instead.
-  }, [orders]);
-
   const getLastOrder = useCallback(() => {
     return orders[0] || null;
   }, [orders]);
@@ -409,25 +404,15 @@ export const [OrderProvider, useOrders] = createContextHook(() => {
     return orders.find(o => ['new', 'in_progress', 'confirmed', 'dispatched'].includes(o.status)) || null;
   }, [orders]);
 
-  const markNotificationRead = useCallback(async (_id: string) => {
-    console.log('[Orders] Notifications not yet available');
-  }, []);
-
-  const unreadCount = 0;
-
   return {
     orders,
-    notifications,
     activeOrderId,
     setActiveOrderId,
     placeOrder,
     placeBundleOrder,
-    rateOrder,
     getLastOrder,
     getLastDeliveredOrder,
     getActiveOrder,
-    markNotificationRead,
-    unreadCount,
     isLoadingOrders: ordersQuery.isLoading,
   };
 });

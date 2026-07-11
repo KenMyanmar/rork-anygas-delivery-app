@@ -16,6 +16,7 @@ import Colors from '@/constants/colors';
 import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { useAuth } from '@/providers/AuthProvider';
 import { Customer } from '@/types';
+import { devLog } from '@/lib/logger';
 
 export default function CustomerSelectScreen() {
   const { matchedCustomers, selectCustomer } = useAuth();
@@ -24,7 +25,7 @@ export default function CustomerSelectScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    console.log('[CustomerSelect] Selected customer:', customerId);
+    devLog('[CustomerSelect] Selected customer:', customerId);
     await selectCustomer(customerId);
     router.replace('/');
   }, [selectCustomer]);

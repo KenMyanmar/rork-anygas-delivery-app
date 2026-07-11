@@ -1,8 +1,46 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import { devLog } from './logger';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 const SESSION_KEY = 'anygas_supabase_session';
+
+const sessionStorage = {
+  async getItem(): Promise<string | null> {
+    if (Platform.OS === 'web') {
+      return AsyncStorage.getItem(SESSION_KEY);
+    }
+
+    const secureSession = await SecureStore.getItemAsync(SESSION_KEY);
+    if (secureSession) return secureSession;
+
+    // One-time migration for sessions created by older builds.
+    const legacySession = await AsyncStorage.getItem(SESSION_KEY);
+    if (legacySession) {
+      await SecureStore.setItemAsync(SESSION_KEY, legacySession);
+      await AsyncStorage.removeItem(SESSION_KEY);
+    }
+    return legacySession;
+  },
+
+  async setItem(value: string): Promise<void> {
+    if (Platform.OS === 'web') {
+      await AsyncStorage.setItem(SESSION_KEY, value);
+      return;
+    }
+    await SecureStore.setItemAsync(SESSION_KEY, value);
+    await AsyncStorage.removeItem(SESSION_KEY);
+  },
+
+  async removeItem(): Promise<void> {
+    await AsyncStorage.removeItem(SESSION_KEY);
+    if (Platform.OS !== 'web') {
+      await SecureStore.deleteItemAsync(SESSION_KEY);
+    }
+  },
+};
 
 export interface SupabaseUser {
   id: string;
@@ -33,7 +71,7 @@ function notifyListeners(event: AuthEvent, session: SupabaseSession | null) {
     try {
       listener(event, session);
     } catch (e) {
-      console.log('[Supabase] Auth listener error:', e);
+      devLog('[Supabase] Auth listener error:', e);
     }
   });
 }
@@ -63,12 +101,12 @@ async function refreshAccessToken(): Promise<string | null> {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async (): Promise<string | null> => {
     try {
-      const stored = await AsyncStorage.getItem(SESSION_KEY);
+      const stored = await sessionStorage.getItem();
       if (!stored) return null;
       const session = JSON.parse(stored) as SupabaseSession;
       if (!session.refresh_token) return null;
 
-      console.log('[Supabase] Refreshing access token...');
+      devLog('[Supabase] Refreshing access token...');
       const response = await fetch(
         `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
         {
@@ -82,9 +120,9 @@ async function refreshAccessToken(): Promise<string | null> {
       );
 
       if (!response.ok) {
-        console.log('[Supabase] Token refresh failed:', response.status);
+        devLog('[Supabase] Token refresh failed:', response.status);
         currentSession = null;
-        await AsyncStorage.removeItem(SESSION_KEY);
+        await sessionStorage.removeItem();
         notifyListeners('SIGNED_OUT', null);
         return null;
       }
@@ -100,14 +138,14 @@ async function refreshAccessToken(): Promise<string | null> {
       };
 
       currentSession = newSession;
-      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(newSession));
+      await sessionStorage.setItem(JSON.stringify(newSession));
       notifyListeners('TOKEN_REFRESHED', newSession);
-      console.log('[Supabase] Token refreshed for user:', newSession.user?.id);
+      devLog('[Supabase] Token refreshed for user:', newSession.user?.id);
       return newSession.access_token;
     } catch (e) {
-      console.log('[Supabase] Token refresh error:', e);
+      devLog('[Supabase] Token refresh error:', e);
       currentSession = null;
-      await AsyncStorage.removeItem(SESSION_KEY);
+      await sessionStorage.removeItem();
       notifyListeners('SIGNED_OUT', null);
       return null;
     } finally {
@@ -132,7 +170,7 @@ async function getAccessToken(): Promise<string | null> {
     return currentSession.access_token;
   }
   try {
-    const stored = await AsyncStorage.getItem(SESSION_KEY);
+    const stored = await sessionStorage.getItem();
     if (stored) {
       const session = JSON.parse(stored) as SupabaseSession;
       currentSession = session;
@@ -142,7 +180,7 @@ async function getAccessToken(): Promise<string | null> {
       return session.access_token;
     }
   } catch (e) {
-    console.log('[Supabase] Failed to get stored session:', e);
+    devLog('[Supabase] Failed to get stored session:', e);
   }
   return null;
 }
@@ -256,22 +294,22 @@ class PostgrestFilterBuilder<T = unknown> {
         fetchOptions.body = JSON.stringify(this.body);
       }
 
-      console.log('[Supabase REST]', this.method, fullUrl);
+      devLog('[Supabase REST]', this.method, fullUrl);
       let response = await fetch(fullUrl, fetchOptions);
       // vC13 Task A: on 401, attempt one token refresh and retry once.
       if (response.status === 401) {
-        console.log('[Supabase REST] 401, attempting token refresh...');
+        devLog('[Supabase REST] 401, attempting token refresh...');
         const newToken = await refreshAccessToken();
         if (newToken) {
           fetchHeaders['Authorization'] = `Bearer ${newToken}`;
           response = await fetch(fullUrl, { ...fetchOptions, headers: fetchHeaders });
-          console.log('[Supabase REST] Retried after refresh, status:', response.status);
+          devLog('[Supabase REST] Retried after refresh, status:', response.status);
         }
       }
       const text = await response.text();
 
       if (!response.ok) {
-        console.log('[Supabase REST] Error:', response.status, text);
+        devLog('[Supabase REST] Error:', response.status, text);
         let errorMsg = `HTTP ${response.status}`;
         try {
           const errJson = JSON.parse(text);
@@ -288,7 +326,7 @@ class PostgrestFilterBuilder<T = unknown> {
       return { data: Array.isArray(data) ? data : [data], error: null };
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Unknown error';
-      console.log('[Supabase REST] Fetch error:', message);
+      devLog('[Supabase REST] Fetch error:', message);
       return { data: null, error: { message } };
     }
   }
@@ -298,7 +336,7 @@ class SupabaseRestClient {
   auth = {
     getSession: async (): Promise<{ data: { session: SupabaseSession | null } }> => {
       try {
-        const stored = await AsyncStorage.getItem(SESSION_KEY);
+        const stored = await sessionStorage.getItem();
         if (stored) {
           const session = JSON.parse(stored) as SupabaseSession;
           currentSession = session;
@@ -306,7 +344,7 @@ class SupabaseRestClient {
           // re-OTP on every launch. Access tokens expire ~1 hour; if expired
           // (or within 60s of expiry), refresh via refresh_token grant.
           if (isTokenExpired(session)) {
-            console.log('[Supabase] Session token expired, refreshing on restore...');
+            devLog('[Supabase] Session token expired, refreshing on restore...');
             const newToken = await refreshAccessToken();
             if (newToken) {
               return { data: { session: currentSession } };
@@ -314,18 +352,18 @@ class SupabaseRestClient {
             // Refresh failed — signed out via refreshAccessToken
             return { data: { session: null } };
           }
-          console.log('[Supabase] Restored session for user:', session.user?.id);
+          devLog('[Supabase] Restored session for user:', session.user?.id);
           return { data: { session } };
         }
       } catch (e) {
-        console.log('[Supabase] getSession error:', e);
+        devLog('[Supabase] getSession error:', e);
       }
       return { data: { session: null } };
     },
 
     signInWithOtp: async (params: { phone: string }): Promise<{ error: { message: string } | null }> => {
       try {
-        console.log('[Supabase] Sending OTP to:', params.phone);
+        devLog('[Supabase] Sending OTP to:', params.phone);
         const response = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
           method: 'POST',
           headers: {
@@ -338,10 +376,10 @@ class SupabaseRestClient {
         if (!response.ok) {
           const err = await response.json().catch(() => ({}));
           const msg = err.msg || err.message || err.error || `OTP failed (${response.status})`;
-          console.log('[Supabase] OTP send error:', msg);
+          devLog('[Supabase] OTP send error:', msg);
           return { error: { message: msg } };
         }
-        console.log('[Supabase] OTP sent successfully');
+        devLog('[Supabase] OTP sent successfully');
         return { error: null };
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Network error';
@@ -358,7 +396,7 @@ class SupabaseRestClient {
       error: { message: string } | null;
     }> => {
       try {
-        console.log('[Supabase] Verifying OTP for:', params.phone);
+        devLog('[Supabase] Verifying OTP for:', params.phone);
         const response = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
           method: 'POST',
           headers: {
@@ -376,7 +414,7 @@ class SupabaseRestClient {
 
         if (!response.ok) {
           const msg = result.msg || result.message || result.error || `Verify failed (${response.status})`;
-          console.log('[Supabase] OTP verify error:', msg);
+          devLog('[Supabase] OTP verify error:', msg);
           return { data: { session: null, user: null }, error: { message: msg } };
         }
 
@@ -393,8 +431,8 @@ class SupabaseRestClient {
 
         if (session) {
           currentSession = session;
-          await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
-          console.log('[Supabase] Session stored, user:', session.user?.id);
+          await sessionStorage.setItem(JSON.stringify(session));
+          devLog('[Supabase] Session stored, user:', session.user?.id);
           notifyListeners('SIGNED_IN', session);
         }
 
@@ -421,9 +459,9 @@ class SupabaseRestClient {
           }).catch(() => {});
         }
         currentSession = null;
-        await AsyncStorage.removeItem(SESSION_KEY);
+        await sessionStorage.removeItem();
         notifyListeners('SIGNED_OUT', null);
-        console.log('[Supabase] Signed out');
+        devLog('[Supabase] Signed out');
         return { error: null };
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Sign out error';
@@ -435,18 +473,18 @@ class SupabaseRestClient {
     // softSignOut — the session moves to SecureStore so PIN can restore it.
     clearLocalSession: async (): Promise<void> => {
       currentSession = null;
-      await AsyncStorage.removeItem(SESSION_KEY);
+      await sessionStorage.removeItem();
       notifyListeners('SIGNED_OUT', null);
-      console.log('[Supabase] Local session cleared (not revoked)');
+      devLog('[Supabase] Local session cleared (not revoked)');
     },
 
     // vC16 Task A: Restore a parked session from SecureStore back to the live
     // session path. Notifies SIGNED_IN so AuthProvider picks it up.
     resumeSession: async (session: SupabaseSession): Promise<void> => {
       currentSession = session;
-      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      await sessionStorage.setItem(JSON.stringify(session));
       notifyListeners('SIGNED_IN', session);
-      console.log('[Supabase] Session restored from parked');
+      devLog('[Supabase] Session restored from parked');
     },
 
     // vC16 Task A: Revoke a specific token server-side (for clearing a parked
@@ -460,9 +498,9 @@ class SupabaseRestClient {
             'Authorization': `Bearer ${token}`,
           },
         }).catch(() => {});
-        console.log('[Supabase] Token revoked');
+        devLog('[Supabase] Token revoked');
       } catch (e) {
-        console.log('[Supabase] Revoke token error:', e);
+        devLog('[Supabase] Revoke token error:', e);
       }
     },
 
@@ -489,7 +527,7 @@ class SupabaseRestClient {
       try {
         const token = await getAccessToken();
         const url = `${SUPABASE_URL}/functions/v1/${functionName}`;
-        console.log('[Supabase] Invoking function:', functionName);
+        devLog('[Supabase] Invoking function:', functionName);
 
         const fnHeaders: Record<string, string> = {
           'apikey': SUPABASE_ANON_KEY,
@@ -504,7 +542,7 @@ class SupabaseRestClient {
         });
         // vC13 Task A: on 401, attempt one token refresh and retry once.
         if (response.status === 401) {
-          console.log('[Supabase] Function 401, attempting token refresh...');
+          devLog('[Supabase] Function 401, attempting token refresh...');
           const newToken = await refreshAccessToken();
           if (newToken) {
             response = await fetch(url, {
@@ -512,7 +550,7 @@ class SupabaseRestClient {
               headers: { ...fnHeaders, 'Authorization': `Bearer ${newToken}` },
               body: fnBody,
             });
-            console.log('[Supabase] Function retried after refresh, status:', response.status);
+            devLog('[Supabase] Function retried after refresh, status:', response.status);
           }
         }
 
@@ -529,11 +567,11 @@ class SupabaseRestClient {
           const msg =
             (errData && typeof errData === 'object' && ((errData.error as string) || (errData.message as string))) ||
             `Function error (${response.status})`;
-          console.log('[Supabase] Function error:', msg);
+          devLog('[Supabase] Function error:', msg);
           return { data: null, error: { message: String(msg) } };
         }
 
-        console.log('[Supabase] Function success:', functionName);
+        devLog('[Supabase] Function success:', functionName);
         return { data, error: null };
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Network error';
@@ -565,7 +603,7 @@ class SupabaseRestClient {
       on: (_event: string, _opts: unknown, _callback: unknown) => {
         return {
           subscribe: () => {
-            console.log('[Supabase] Realtime not available in REST client, using polling instead');
+            devLog('[Supabase] Realtime not available in REST client, using polling instead');
             return { unsubscribe: () => {} };
           },
         };
@@ -574,7 +612,7 @@ class SupabaseRestClient {
   }
 
   removeChannel(_channel: unknown) {
-    console.log('[Supabase] removeChannel (no-op in REST client)');
+    devLog('[Supabase] removeChannel (no-op in REST client)');
   }
 }
 
