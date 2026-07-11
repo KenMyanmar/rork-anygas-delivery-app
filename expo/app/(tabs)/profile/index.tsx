@@ -33,7 +33,7 @@ import { usePinLock } from '@/providers/PinLockProvider';
 
 export default function ProfileScreen() {
   const { activeCustomer, activeProfile, savedAddresses, phoneNumber, softSignOut, removeAccount } = useAuth();
-  const { t, tMM, isMM, isEN, changeLanguage } = useI18n();
+  const { t, tMM, tEN, isMM, isEN, changeLanguage } = useI18n();
   const { lock } = usePinLock();
 
   // vC15 Task A: "Lock app" is the prominent, free action — instant PIN screen,
@@ -116,6 +116,13 @@ export default function ProfileScreen() {
 
   const handleSupport = useCallback(() => {
     Linking.openURL('tel:8484');
+  }, []);
+
+  const handleDeleteAccount = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    router.push('/delete-account');
   }, []);
 
   return (
@@ -340,6 +347,21 @@ export default function ProfileScreen() {
       >
         <Trash2 size={15} color={Colors.error} />
         <Text style={styles.removeAccountText}>{t('remove_account')}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.deleteAccountLink}
+        onPress={handleDeleteAccount}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={tEN('delete_account_permanently')}
+      >
+        <Trash2 size={17} color={Colors.error} />
+        <View style={styles.deleteAccountTextWrap}>
+          <Text style={styles.deleteAccountTextMM}>{tMM('delete_account_permanently')}</Text>
+          <Text style={styles.deleteAccountTextEN}>{tEN('delete_account_permanently')}</Text>
+        </View>
+        <ChevronRight size={18} color={Colors.error} />
       </TouchableOpacity>
 
       <Text style={styles.version}>AnyGas 8484 v1.0.0</Text>
@@ -668,6 +690,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500' as const,
     color: Colors.error,
+  },
+  deleteAccountLink: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.error,
+    backgroundColor: Colors.errorLight,
+  },
+  deleteAccountTextWrap: {
+    flex: 1,
+  },
+  deleteAccountTextMM: {
+    fontSize: 15,
+    fontFamily: 'NotoSansMyanmar-Medium',
+    color: Colors.error,
+  },
+  deleteAccountTextEN: {
+    marginTop: 3,
+    fontSize: 12,
+    color: Colors.textSecondary,
   },
   // vC14 legacy logout button styles (removed in vC15, kept for reference)
   logoutButton: {

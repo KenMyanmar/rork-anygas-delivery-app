@@ -197,6 +197,7 @@ const STRINGS = {
   remove_account: { mm: 'ဤစက်မှ အကောင့်ဖျက်ပါ', en: 'Remove account from this device' },
   remove_account_confirm: { mm: 'ဤစက်မှ သင့်အကောင့်ကို ဖယ်ရှားပါမည်။ ပြန်ဝင်ရန် SMS ကုဒ် လိုပါမည်။ ဆက်လုပ်မလား?', en: 'This removes your account from this device. You will need an SMS code to sign back in. Continue?' },
   remove_account_desc: { mm: 'အကောင့် လုံးဝ ဖယ်ရှားပါမည်', en: 'Fully remove account and data from this device' },
+  delete_account_permanently: { mm: 'အကောင့်ကို အပြီးဖျက်မည်', en: 'Delete my account permanently' },
 
   // vC16 Task B — Address experience (landmark + GPS)
   landmark_label: { mm: 'အမှတ်အသား (ရွေးချယ်)', en: 'Landmark (optional)' },

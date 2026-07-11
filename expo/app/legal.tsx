@@ -29,7 +29,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
   },
   {
     heading: 'Retention and deletion',
-    body: 'We retain customer and order records for service, safety, accounting and legal requirements. To request access, correction or permanent deletion, call 8484. After identity verification, AnyGas will delete or anonymize eligible information and explain any records that must be retained.',
+    body: 'Use “Delete my account permanently” in Profile to delete your app account. Order and hotline business records may be retained in anonymous form for service, safety, accounting and legal requirements. For access, correction or full PII-erasure support, call 8484.',
   },
   {
     heading: 'Contact',

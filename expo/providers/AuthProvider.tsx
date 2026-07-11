@@ -499,6 +499,52 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     queryClient.clear();
   }, [queryClient, clearPinOnSignOut, clearParkedSession, activeCustomer, phoneNumber, customerId]);
 
+  // Permanent-deletion success path. Unlike ordinary device removal, this
+  // keeps no phone prefill and removes every customer-scoped order cache so a
+  // later OTP creates a genuinely fresh local account. Each storage operation
+  // is best-effort because the server identity is already gone at this point;
+  // local cleanup must always finish by clearing in-memory auth state.
+  const clearDeletedAccountLocally = useCallback(async () => {
+    devLog('[Auth] Finalizing permanent account deletion locally');
+
+    const cleanupResults = await Promise.allSettled([
+      clearPinOnSignOut(),
+      clearParkedSession(),
+      supabase.auth.signOut(),
+    ]);
+    cleanupResults.forEach((result) => {
+      if (result.status === 'rejected') {
+        devLog('[Auth] Permanent deletion cleanup step failed:', result.reason);
+      }
+    });
+
+    setSession(null);
+    setUser(null);
+    setActiveCustomer(null);
+    setMatchedCustomers([]);
+    setLinkingState('idle');
+    setSavedAddresses([]);
+    setParkedAccount(null);
+
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const keysToRemove = keys.filter((key) =>
+        key === ACTIVE_CUSTOMER_KEY ||
+        key === ADDRESSES_KEY ||
+        key === LAST_PHONE_KEY ||
+        key === ORDERS_KEY_PREFIX ||
+        key.startsWith(`${ORDERS_KEY_PREFIX}:`)
+      );
+      if (keysToRemove.length > 0) {
+        await AsyncStorage.multiRemove(keysToRemove);
+      }
+    } catch (error) {
+      devLog('[Auth] Permanent deletion AsyncStorage cleanup failed:', error);
+    }
+
+    queryClient.clear();
+  }, [queryClient, clearPinOnSignOut, clearParkedSession]);
+
   // vC15-compatible logout (kept for pin-lock.tsx lockout/forgot paths).
   // This is the old hard logout — redirects to login. Now delegates to
   // removeAccount semantics but is called from PIN lockout/forgot flows.
@@ -626,6 +672,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     resumeParkedSession,
     clearParkedSession,
     removeAccount,
+    clearDeletedAccountLocally,
     sendOtp,
     verifyOtp,
     logout,

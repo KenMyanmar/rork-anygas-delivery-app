@@ -1,18 +1,18 @@
 # AnyGas App Store account deletion contract
 
-Status: backend work required before App Store submission.
+Status: `delete-customer-account` v1 is live. The app integration is implemented separately from the shared backend.
 
 The current **Remove account from this device** action is a secure local sign-out. It must not be relabeled as permanent deletion. Apple requires a separate in-app permanent deletion flow because the app supports customer registration.
 
-## Required edge function
+## Live edge function
 
 `delete-customer-account`
 
 - Method: authenticated `POST`
-- Request body: `{ "confirmation": "DELETE" }`
+- Request body: empty. The app performs PIN and typed confirmation locally before calling the function.
 - Identity: derive the Supabase Auth user ID and phone from the verified JWT. Never accept `auth_user_id`, phone or customer ID as authoritative request fields.
 - Response on success: `{ "ok": true, "request_id": "<uuid>" }`
-- Response errors: stable codes for `not_authenticated`, `confirmation_required`, `account_not_linked`, `deletion_blocked`, and `internal_error`.
+- Response errors: `409 active_orders` when an order must be completed or cancelled first; authenticated/server failures remain visible and retryable in the app.
 
 ## Transactional behavior
 
