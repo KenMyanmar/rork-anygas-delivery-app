@@ -52,6 +52,12 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c13f53dd-cbf5-4cdd-8e99-4a45c322d7a7"
+      }
+    },
+    "owner": "anygas"
   }
 }
