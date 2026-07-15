@@ -7,7 +7,6 @@ import {
   ScrollView,
   Alert,
   Platform,
-  Linking,
 } from 'react-native';
 import {
   User,
@@ -115,7 +114,7 @@ export default function ProfileScreen() {
   }, []);
 
   const handleSupport = useCallback(() => {
-    Linking.openURL('tel:8484');
+    router.push('/support');
   }, []);
 
   const handleDeleteAccount = useCallback(() => {
@@ -308,6 +307,21 @@ export default function ProfileScreen() {
           <Text style={styles.menuItemText}>{t('terms')}</Text>
           <ChevronRight size={18} color={Colors.textTertiary} />
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.menuItem, styles.deleteAccountMenuItem]}
+          onPress={handleDeleteAccount}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={tEN('delete_account_permanently')}
+          testID="delete-account-menu-item"
+        >
+          <Trash2 size={20} color={Colors.error} />
+          <View style={styles.deleteAccountTextWrap}>
+            <Text style={styles.deleteAccountTextMM}>{tMM('delete_account_permanently')}</Text>
+            <Text style={styles.deleteAccountTextEN}>{tEN('delete_account_permanently')}</Text>
+          </View>
+          <ChevronRight size={18} color={Colors.error} />
+        </TouchableOpacity>
       </View>
 
       {/* vC15 Task A — Lock app (prominent, free) */}
@@ -349,21 +363,6 @@ export default function ProfileScreen() {
         <Text style={styles.removeAccountText}>{t('remove_account')}</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.deleteAccountLink}
-        onPress={handleDeleteAccount}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel={tEN('delete_account_permanently')}
-      >
-        <Trash2 size={17} color={Colors.error} />
-        <View style={styles.deleteAccountTextWrap}>
-          <Text style={styles.deleteAccountTextMM}>{tMM('delete_account_permanently')}</Text>
-          <Text style={styles.deleteAccountTextEN}>{tEN('delete_account_permanently')}</Text>
-        </View>
-        <ChevronRight size={18} color={Colors.error} />
-      </TouchableOpacity>
-
       <Text style={styles.version}>AnyGas 8484 v1.0.0</Text>
       {activeCustomer && (
         <Text style={styles.customerId}>Customer ID: {activeCustomer.id}</Text>
@@ -380,6 +379,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+    paddingBottom: 120,
   },
   profileHeader: {
     flexDirection: 'row',
@@ -691,16 +691,8 @@ const styles = StyleSheet.create({
     fontWeight: '500' as const,
     color: Colors.error,
   },
-  deleteAccountLink: {
+  deleteAccountMenuItem: {
     minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 20,
-    borderRadius: 16,
-    borderWidth: 1,
     borderColor: Colors.error,
     backgroundColor: Colors.errorLight,
   },

@@ -61,6 +61,7 @@ function RootLayoutNav() {
         <Stack.Screen name="pin-lock" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="edit-address" options={{ headerShown: false, presentation: "modal" }} />
         <Stack.Screen name="delete-account" options={{ headerShown: false, presentation: "modal", gestureEnabled: false }} />
+        <Stack.Screen name="support" options={{ headerShown: false, presentation: "modal" }} />
       </Stack.Protected>
       <Stack.Protected guard={!isAuthenticated && !parkedAccount}>
         <Stack.Screen
