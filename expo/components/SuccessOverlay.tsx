@@ -12,18 +12,7 @@ import { View, Text, StyleSheet, Platform, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Check, Flame } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  withDelay,
-  withSequence,
-  Easing,
-  runOnJS,
-} from 'react-native-reanimated';
 import Colors from '@/constants/colors';
-import { SPRING, DURATION, EASE_OUT, useReduceMotion } from '@/lib/motion';
 
 type SuccessOverlayProps = {
   visible: boolean;
@@ -38,69 +27,27 @@ export function SuccessOverlay({
   orderSummary,
   onDone,
 }: SuccessOverlayProps) {
-  const reduce = useReduceMotion();
-  const checkScale = useSharedValue(0);
-  const checkOpacity = useSharedValue(0);
-  const cardY = useSharedValue(40);
-  const cardOpacity = useSharedValue(0);
-  const ringScale = useSharedValue(0);
-
-  const checkStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: checkScale.value }],
-    opacity: checkOpacity.value,
-  }));
-  const ringStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: ringScale.value }],
-    opacity: checkOpacity.value,
-  }));
-  const cardStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: cardY.value }],
-    opacity: cardOpacity.value,
-  }));
-
   useEffect(() => {
     if (!visible) return;
     // Fire the single success haptic once.
     if (Platform.OS !== 'web') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-    if (reduce) {
-      checkOpacity.value = withTiming(1, { duration: 200 });
-      checkScale.value = 1;
-      cardOpacity.value = withTiming(1, { duration: 200 });
-      cardY.value = 0;
-      ringScale.value = 1;
-    } else {
-      // Check draws in: 0 → 1.15 → 1 with a bouncy spring
-      checkOpacity.value = withTiming(1, { duration: 120 });
-      checkScale.value = withSequence(
-        withSpring(1.15, SPRING.bouncy),
-        withSpring(1, SPRING.standard),
-      );
-      // Ring expand behind the check
-      ringScale.value = withSequence(
-        withSpring(1.3, { damping: 14, stiffness: 160 }),
-        withSpring(1, SPRING.standard),
-      );
-      // Card slides up with a gentle spring
-      cardOpacity.value = withDelay(120, withTiming(1, { duration: 200 }));
-      cardY.value = withDelay(120, withSpring(0, SPRING.gentle));
-    }
     // Auto-dismiss after 1.6s
-    const t = setTimeout(() => runOnJS(onDone)(), 1600);
+    const t = setTimeout(onDone, 1600);
     return () => clearTimeout(t);
-  }, [visible, reduce]);
+  }, [visible, onDone]);
 
   if (!visible) return null;
 
   return (
     <Pressable style={styles.overlay} onPress={onDone}>
       <View style={styles.centerWrap}>
-        <Animated.View style={[styles.ring, ringStyle]} />
-        <Animated.View style={[styles.checkCircle, checkStyle]}>
+        <View style={styles.ring} />
+        <View style={styles.checkCircle}>
           <Check size={56} color="#FFFFFF" strokeWidth={3} />
-        </Animated.View>
-        <Animated.View style={[styles.card, cardStyle]}>
+        </View>
+        <View style={styles.card}>
           <View style={styles.cardFlame}>
             <Flame size={18} color={Colors.primary} />
           </View>
@@ -112,7 +59,7 @@ export function SuccessOverlay({
           ) : null}
           <Text style={styles.cardTotal}>{totalLabel}</Text>
           <Text style={styles.cardHint}>Tap to continue</Text>
-        </Animated.View>
+        </View>
       </View>
     </Pressable>
   );

@@ -7,25 +7,14 @@
  * - Animation must never block input.
  * - Respect AccessibilityInfo.isReduceMotionEnabled — disable non-essential
  *   motion when on. Moments 1/3/5/7/9 are non-essential; 2/4/6/8 stay.
- * - 60fps only (Reanimated UI-thread).
+ *
+ * Store-stability quarantine (Build 12): UI-thread Worklets/Reanimated are
+ * disabled because Worklets 0.5.1 can abort Hermes on iOS. Keep this module as
+ * the single restoration point for richer motion after the native dependency
+ * is upgraded to an Expo-supported fixed version.
  */
-import React, { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Platform, Pressable, View, Text } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  withRepeat,
-  withSequence,
-  Easing,
-  cancelAnimation,
-  runOnJS,
-  useAnimatedReaction,
-  useDerivedValue,
-  interpolate,
-  useAnimatedProps,
-} from 'react-native-reanimated';
+import React, { useEffect, useState } from 'react';
+import { AccessibilityInfo, Easing, Platform, Pressable, View, Text } from 'react-native';
 
 // ---------- Spring presets ----------
 
@@ -86,14 +75,12 @@ export function useReduceMotion(): boolean {
 
 // ---------- Animated Pressable ----------
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 type ScalePressableProps = React.ComponentProps<typeof Pressable> & {
   /** Scale on press-in. Default 0.97. Set to 1 to disable scale (opacity only). */
   pressScale?: number;
   /** Opacity on press-in when reduce-motion is on. Default 0.7. */
   pressOpacity?: number;
-  /** Reanimated entering animation (e.g. FadeInDown.delay(i*40).springify()). */
+  /** Quarantined Reanimated props retained for source compatibility. */
   entering?: any;
   /** Reanimated exiting animation. */
   exiting?: any;
@@ -102,9 +89,8 @@ type ScalePressableProps = React.ComponentProps<typeof Pressable> & {
 };
 
 /**
- * Pressable with press-scale built in (moment 1). Scales to `pressScale`
- * on press-in, springs back on release. Under reduce-motion, falls back
- * to opacity change only (no transform). Apply to all tappable cards/buttons.
+ * Worklets-free press feedback. React Native's pressed state provides the same
+ * tactile affordance without scheduling UI-thread worklets.
  */
 export const ScalePressable = React.forwardRef<any, ScalePressableProps>(
   function ScalePressable(
@@ -124,41 +110,24 @@ export const ScalePressable = React.forwardRef<any, ScalePressableProps>(
     _ref,
   ) {
     const reduce = useReduceMotion();
-    const scaleSV = useSharedValue(1);
-    const opacitySV = useSharedValue(1);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-      transform: reduce ? [] : [{ scale: scaleSV.value }],
-      opacity: reduce ? opacitySV.value : 1,
-    }));
-
     return (
-      <AnimatedPressable
-        onPressIn={(e: any) => {
-          onPressIn?.(e);
-          if (reduce) {
-            opacitySV.value = withTiming(pressOpacity, { duration: 80 });
-          } else if (!disabled) {
-            scaleSV.value = withSpring(pressScale, SPRING.snappy);
-          }
-        }}
-        onPressOut={(e: any) => {
-          onPressOut?.(e);
-          if (reduce) {
-            opacitySV.value = withTiming(1, { duration: 120 });
-          } else {
-            scaleSV.value = withSpring(1, SPRING.standard);
-          }
-        }}
+      <Pressable
+        ref={_ref}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
         disabled={disabled}
-        style={[style, animatedStyle]}
-        entering={entering}
-        exiting={exiting}
-        layout={layout}
+        style={(state) => [
+          typeof style === 'function' ? style(state) : style,
+          state.pressed && !disabled
+            ? reduce
+              ? { opacity: pressOpacity }
+              : { opacity: pressOpacity, transform: [{ scale: pressScale }] }
+            : null,
+        ]}
         {...rest}
       >
         {children}
-      </AnimatedPressable>
+      </Pressable>
     );
   },
 );
@@ -166,8 +135,7 @@ export const ScalePressable = React.forwardRef<any, ScalePressableProps>(
 // ---------- Shimmer skeleton (moment 9) ----------
 
 /**
- * Shimmer skeleton block. Subtle 1.2s sweep gradient. Falls back to a
- * static block under reduce-motion.
+ * Static skeleton block while Worklets are quarantined.
  */
 export function Skeleton({
   width = '100%',
@@ -180,39 +148,6 @@ export function Skeleton({
   borderRadius?: number;
   style?: any;
 }) {
-  const reduce = useReduceMotion();
-  const translate = useSharedValue(-1);
-
-  useEffect(() => {
-    if (reduce) return;
-    translate.value = withRepeat(
-      withTiming(1, { duration: DURATION.ambient, easing: EASE_IN_OUT }),
-      -1,
-      false,
-    );
-    return () => cancelAnimation(translate);
-  }, [reduce]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translate.value * 220 }],
-  }));
-
-  if (reduce) {
-    return (
-      <View
-        style={[
-          {
-            width,
-            height,
-            borderRadius,
-            backgroundColor: 'rgba(0,0,0,0.06)',
-          },
-          style,
-        ]}
-      />
-    );
-  }
-
   return (
     <View
       style={[
@@ -220,71 +155,17 @@ export function Skeleton({
           width,
           height,
           borderRadius,
-          backgroundColor: 'rgba(0,0,0,0.05)',
-          overflow: 'hidden',
+          backgroundColor: 'rgba(0,0,0,0.06)',
         },
         style,
       ]}
-    >
-      <Animated.View
-        style={[
-          {
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: 120,
-            height: '100%',
-            backgroundColor: 'rgba(255,255,255,0.55)',
-          },
-          animatedStyle,
-        ]}
-      />
-    </View>
+    />
   );
 }
 
-// ---------- Stagger entrance presets (moment 5) ----------
-
-import {
-  FadeInDown,
-  FadeIn,
-  SlideInRight,
-  SlideOutLeft,
-  SlideInLeft,
-  SlideOutRight,
-  FadeInUp,
-  FadeOut,
-  withDelay as _wd,
-} from 'react-native-reanimated';
-
-export const ENTRANCE = {
-  fadeInDown: (index: number, max = 8) =>
-    index < max
-      ? FadeInDown.delay(index * 40).springify().damping(18).stiffness(180)
-      : FadeInDown.springify().damping(18).stiffness(180),
-  fadeIn: FadeIn.springify().damping(18).stiffness(180),
-};
-
-// Step transition directions (moment 2)
-export const STEP_ENTER = {
-  forward: SlideInRight.springify().damping(20).stiffness(200).duration(220),
-  back: SlideInLeft.springify().damping(20).stiffness(200).duration(220),
-};
-export const STEP_EXIT = {
-  forward: SlideOutLeft.springify().damping(20).stiffness(200).duration(150),
-  back: SlideOutRight.springify().damping(20).stiffness(200).duration(150),
-};
-
-export { FadeIn, FadeOut, FadeInDown, FadeInUp, SlideInRight, SlideInLeft, SlideOutLeft, SlideOutRight };
-
-// ---------- AnimatedNumber (moment 7) ----------
-
-const AnimatedText = Animated.createAnimatedComponent(Text);
-
 /**
- * Rolling number text. Animates from previous value to next over `duration`ms
- * when the `value` prop changes. Falls back to instant text under reduce-motion.
- * Use for the pricing/confirm total so quantity taps roll the number visibly.
+ * Worklets-free number rendering. The API is retained so richer motion can be
+ * restored in one place after the dependency is fixed.
  */
 export function AnimatedNumber({
   value,
@@ -297,29 +178,5 @@ export function AnimatedNumber({
   duration?: number;
   style?: any;
 }) {
-  const reduce = useReduceMotion();
-  const displayed = useSharedValue(value);
-  const isFirst = useRef(true);
-
-  useEffect(() => {
-    if (reduce) {
-      displayed.value = value;
-      return;
-    }
-    if (isFirst.current) {
-      isFirst.current = false;
-      displayed.value = value;
-      return;
-    }
-    displayed.value = withTiming(value, { duration, easing: EASE_OUT });
-  }, [value, reduce]);
-
-  const animatedProps = useAnimatedProps(() => ({
-    text: format(displayed.value),
-  })) as any;
-
-  if (reduce) {
-    return <Text style={style}>{format(value)}</Text>;
-  }
-  return <AnimatedText style={style} animatedProps={animatedProps} />;
+  return <Text style={style}>{format(value)}</Text>;
 }

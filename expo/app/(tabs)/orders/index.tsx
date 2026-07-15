@@ -8,7 +8,6 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Package, ChevronRight } from 'lucide-react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useOrders } from '@/providers/OrderProvider';
 import { useI18n } from '@/providers/I18nProvider';
@@ -86,14 +85,13 @@ export default function OrdersScreen() {
     return orders;
   }, [orders, activeFilter]);
 
-  const renderOrder = useCallback(({ item, index }: { item: Order; index: number }) => {
+  const renderOrder = useCallback(({ item }: { item: Order }) => {
     return (
       <ScalePressable
         style={styles.orderCard}
         onPress={() => {
           router.push({ pathname: '/(tabs)/(home)/tracking', params: { orderId: item.id } });
         }}
-        entering={FadeInDown.delay(Math.min(index, 8) * 40).springify().damping(18).stiffness(180)}
       >
         <View style={[styles.brandBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
           <Package size={22} color={getStatusColor(item.status)} />

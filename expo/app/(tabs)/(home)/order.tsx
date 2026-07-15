@@ -39,20 +39,6 @@ import {
 import { Image } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  runOnJS,
-  FadeIn,
-  FadeOut,
-  SlideInRight,
-  SlideInLeft,
-  SlideOutLeft,
-  SlideOutRight,
-  FadeInDown,
-} from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useOrders } from '@/providers/OrderProvider';
@@ -75,10 +61,6 @@ import { devLog } from '@/lib/logger';
 import {
   ScalePressable,
   Skeleton,
-  SPRING,
-  DURATION,
-  EASE_OUT,
-  useReduceMotion,
   AnimatedNumber,
 } from '@/lib/motion';
 import { SuccessOverlay } from '@/components/SuccessOverlay';
@@ -708,7 +690,7 @@ export default function OrderScreen() {
               </View>
             ) : (
               <View style={styles.bundlesList}>
-                {visibleBundles.map((bundle, bundleIdx) => {
+                {visibleBundles.map((bundle) => {
                   const componentValue = computeComponentValue(bundle);
                   const savings = componentValue > bundle.bundle_price ? componentValue - bundle.bundle_price : 0;
                   const brandLabel = bundleBrandLabel(bundle);
@@ -727,7 +709,6 @@ export default function OrderScreen() {
                         setSelectedBundle(bundle);
                       }}
                       testID={`bundle-card-${bundle.id}`}
-                      entering={FadeInDown.delay(Math.min(bundleIdx, 6) * 40).springify().damping(18).stiffness(180)}
                     >
                       <View style={styles.bundleCardTop}>
                         {bundle.image_url ? (
@@ -869,7 +850,7 @@ export default function OrderScreen() {
               <View style={styles.optionsGrid}>
                 {/* vC17 r2: filter brands by intent. New Set shows only
                     allow_new_setup brands; Refill shows all. */}
-                {brands.filter(b => selectedType !== 'new_setup' || b.allow_new_setup).map((brand, brandIdx) => {
+                {brands.filter(b => selectedType !== 'new_setup' || b.allow_new_setup).map((brand) => {
                   const color = getBrandColor(brand.name);
                   const displayName = displayBrandName(brand.name);
                   return (
@@ -883,7 +864,6 @@ export default function OrderScreen() {
                         setSelectedBrandId(brand.id);
                         setSelectedCylinder(null);
                       }}
-                      entering={FadeInDown.delay(Math.min(brandIdx, 6) * 40).springify().damping(18).stiffness(180)}
                     >
                       {brand.logo_url ? (
                         <Image
@@ -943,7 +923,7 @@ export default function OrderScreen() {
             ) : (
               <>
                 <View style={styles.sizeGrid}>
-                  {cylinderOptions.map((cyl, cylIdx) => {
+                  {cylinderOptions.map((cyl) => {
                     const isSelected = selectedCylinder?.id === cyl.id;
                     return (
                       <ScalePressable
@@ -953,7 +933,6 @@ export default function OrderScreen() {
                           isSelected && styles.sizeOptionSelected,
                         ]}
                         onPress={() => setSelectedCylinder(cyl)}
-                        entering={FadeInDown.delay(Math.min(cylIdx, 6) * 40).springify().damping(18).stiffness(180)}
                       >
                         {cyl.imageUrl ? (
                           <Image
@@ -1273,7 +1252,7 @@ export default function OrderScreen() {
             <Text style={styles.stepTitle}>{t('payment_method')}</Text>
             <Text style={styles.stepTitleMM}>{tMM('payment_method')}</Text>
             <View style={styles.paymentList}>
-              {PAYMENT_OPTIONS.map((opt, payIdx) => {
+              {PAYMENT_OPTIONS.map((opt) => {
                 const label = opt.id === 'cash' ? t('pay_cash')
                   : opt.id === 'kbz_pay' ? t('pay_kbz')
                   : opt.id === 'wave_money' ? t('pay_wave')
@@ -1291,7 +1270,6 @@ export default function OrderScreen() {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       }
                     }}
-                    entering={FadeInDown.delay(Math.min(payIdx, 6) * 40).springify().damping(18).stiffness(180)}
                   >
                     <View style={[styles.paymentIconWrap, { backgroundColor: opt.color + '15' }]}>
                       {getPaymentIcon(opt.icon, opt.color)}
@@ -1525,7 +1503,7 @@ export default function OrderScreen() {
         </View>
 
         <View style={styles.progressBar}>
-          <ReanimatedProgressFill progress={progress} />
+          <ProgressFill progress={progress} />
         </View>
 
         <ScrollView
@@ -1596,46 +1574,20 @@ export default function OrderScreen() {
 }
 
 /**
- * vD-MOTION moment 2: progress bar fill animates with a spring on step change.
- * Falls back to instant width under reduce-motion.
+ * Static progress fill while Worklets/Reanimated are quarantined.
  */
-function ReanimatedProgressFill({ progress }: { progress: number }) {
-  const reduce = useReduceMotion();
-  const width = useSharedValue(progress * 100);
-  useEffect(() => {
-    if (reduce) {
-      width.value = progress * 100;
-    } else {
-      width.value = withSpring(progress * 100, { damping: 18, stiffness: 180, mass: 1 });
-    }
-  }, [progress, reduce]);
-  const style = useAnimatedStyle(() => ({
-    width: `${width.value}%`,
-  }));
-  return <Animated.View style={[styles.progressFill, style]} />;
+function ProgressFill({ progress }: { progress: number }) {
+  return <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />;
 }
 
 /**
- * vD-MOTION moment 8: bottom bar slides up with a spring when a step becomes
- * valid. Falls back to instant under reduce-motion.
+ * Static bottom bar while Worklets/Reanimated are quarantined.
  */
 function BottomBar({ children }: { children: React.ReactNode }) {
-  const reduce = useReduceMotion();
-  const y = useSharedValue(reduce ? 0 : 20);
-  const opacity = useSharedValue(reduce ? 1 : 0);
-  useEffect(() => {
-    if (reduce) return;
-    y.value = withSpring(0, SPRING.gentle);
-    opacity.value = withSpring(1, { damping: 20, stiffness: 200 });
-  }, [reduce]);
-  const style = useAnimatedStyle(() => ({
-    transform: [{ translateY: y.value }],
-    opacity: opacity.value,
-  }));
   return (
-    <Animated.View style={[styles.bottomBar, style]}>
+    <View style={styles.bottomBar}>
       {children}
-    </Animated.View>
+    </View>
   );
 }
 

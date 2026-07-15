@@ -23,24 +23,11 @@ import {
   AlertTriangle,
   Home,
 } from 'lucide-react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  withRepeat,
-  withSequence,
-  withDelay,
-  runOnJS,
-  FadeIn,
-  FadeInDown,
-  cancelAnimation,
-} from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useOrders } from '@/providers/OrderProvider';
 import { useI18n } from '@/providers/I18nProvider';
 import { Order } from '@/types';
-import { ScalePressable, SPRING, DURATION, EASE_OUT, useReduceMotion } from '@/lib/motion';
+import { ScalePressable } from '@/lib/motion';
 
 /**
  * 4-stage tracker contract (verified against prod SQL — 9,916 orders):
@@ -235,23 +222,19 @@ export default function TrackingScreen() {
                   <View key={step.key} style={styles.statusRow}>
                     <View style={styles.statusIndicator}>
                       {isCompleted ? (
-                        <Animated.View
+                        <View
                           key={`check-${step.key}`}
                           style={[styles.statusCircleCompleted, isCurrent && styles.statusCircleCurrent]}
-                          entering={FadeIn.springify().damping(12).stiffness(200)}
                         >
                           <CheckCircle size={20} color={isCurrent ? Colors.primary : Colors.success} />
-                        </Animated.View>
+                        </View>
                       ) : (
                         <Circle size={20} color={Colors.border} />
                       )}
                       {!isLast && (
                         <View style={[styles.statusLine, isCompleted && styles.statusLineCompleted]}>
                           {isCompleted && (
-                            <Animated.View
-                              style={styles.statusLineFill}
-                              entering={FadeIn.springify().damping(22).stiffness(150)}
-                            />
+                            <View style={styles.statusLineFill} />
                           )}
                         </View>
                       )}

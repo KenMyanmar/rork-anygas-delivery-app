@@ -21,24 +21,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Flame, Delete, Fingerprint, HelpCircle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  withSequence,
-  withDelay,
-  runOnJS,
-  withRepeat,
-  cancelAnimation,
-} from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { mmFontFamily, mmFontSize } from '@/constants/design';
 import { usePinLock } from '@/providers/PinLockProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useI18n } from '@/providers/I18nProvider';
 import { router } from 'expo-router';
-import { SPRING, useReduceMotion, ScalePressable } from '@/lib/motion';
+import { ScalePressable } from '@/lib/motion';
 
 type Mode = 'setup' | 'confirm' | 'unlock';
 
@@ -276,7 +265,7 @@ export default function PinLockScreen() {
           {/* PIN dots — vD-MOTION moment 6: spring bounce per digit + error flash */}
           <RNAnimated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
             {[0, 1, 2, 3].map((i) => (
-              <PinDot key={i} filled={i < pin.length} hasError={!!errorMsg} index={i} />
+              <PinDot key={i} filled={i < pin.length} hasError={!!errorMsg} />
             ))}
           </RNAnimated.View>
 
@@ -345,52 +334,18 @@ export default function PinLockScreen() {
 }
 
 /**
- * vD-MOTION moment 6: PIN dot with spring bounce when filled + error flash.
- * Spring-bounces when a digit is entered; flashes error color once on wrong
- * PIN (kept simple — no looping). Stays static under reduce-motion.
+ * Static PIN dot while Worklets/Reanimated are quarantined for iOS stability.
  */
-function PinDot({ filled, hasError, index }: { filled: boolean; hasError: boolean; index: number }) {
-  const reduce = useReduceMotion();
-  const scale = useSharedValue(1);
-  const errorFlash = useSharedValue(0);
-  const prevFilled = useRef(false);
-
-  useEffect(() => {
-    if (reduce) return;
-    if (filled && !prevFilled.current) {
-      // Spring bounce on digit entry: 1 → 1.25 → 1
-      scale.value = withSequence(
-        withSpring(1.25, SPRING.bouncy),
-        withSpring(1, SPRING.standard),
-      );
-    }
-    prevFilled.current = filled;
-  }, [filled, reduce]);
-
-  useEffect(() => {
-    if (reduce) return;
-    if (hasError) {
-      // Flash error color once
-      errorFlash.value = withSequence(
-        withTiming(1, { duration: 100 }),
-        withTiming(0, { duration: 400 }),
-      );
-    } else {
-      errorFlash.value = 0;
-    }
-  }, [hasError, reduce]);
-
-  const animatedStyle = useAnimatedStyle(() => {
-    const borderColor = errorFlash.value > 0.5 ? Colors.error : hasError ? Colors.error : filled ? Colors.primary : Colors.border;
-    const bgColor = errorFlash.value > 0.5 ? Colors.error : filled ? Colors.primary : 'transparent';
-    return {
-      transform: reduce ? [] : [{ scale: scale.value }],
-      backgroundColor: bgColor,
-      borderColor,
-    };
-  });
-
-  return <Animated.View style={[styles.pinDot, animatedStyle]} />;
+function PinDot({ filled, hasError }: { filled: boolean; hasError: boolean }) {
+  return (
+    <View
+      style={[
+        styles.pinDot,
+        filled && { backgroundColor: Colors.primary, borderColor: Colors.primary },
+        hasError && { backgroundColor: filled ? Colors.error : 'transparent', borderColor: Colors.error },
+      ]}
+    />
+  );
 }
 
 /**
