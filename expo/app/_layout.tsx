@@ -11,7 +11,6 @@ import { I18nProvider } from "@/providers/I18nProvider";
 import { PinLockProvider, usePinLock } from "@/providers/PinLockProvider";
 import { useAuth } from "@/providers/AuthProvider";
 import PinLockScreen from "./pin-lock";
-import AccountTileScreen from "./account-tile";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -34,26 +33,45 @@ async function loadMyanmarFonts() {
 }
 
 function RootLayoutNav() {
+  const { isLoading, isAuthenticated, parkedAccount } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading) {
+      SplashScreen.hideAsync();
+    }
+  }, [isLoading]);
+
+  // Keep the native splash visible until both the live session and any parked
+  // account have been restored. This prevents protected tabs from mounting for
+  // an unauthenticated user, even for a single frame.
+  if (isLoading) return null;
+
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="login"
-        options={{ headerShown: false, presentation: "modal", gestureEnabled: false }}
-      />
-      <Stack.Screen
-        name="customer-select"
-        options={{ headerShown: false, presentation: "modal", gestureEnabled: false }}
-      />
-      <Stack.Screen
-        name="customer-register"
-        options={{ headerShown: false, presentation: "modal", gestureEnabled: false }}
-      />
-      <Stack.Screen name="pin-lock" options={{ headerShown: false, gestureEnabled: false }} />
-      <Stack.Screen name="account-tile" options={{ headerShown: false, gestureEnabled: false }} />
-      <Stack.Screen name="edit-address" options={{ headerShown: false, presentation: "modal" }} />
+      <Stack.Protected guard={isAuthenticated}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="customer-select"
+          options={{ headerShown: false, presentation: "modal", gestureEnabled: false }}
+        />
+        <Stack.Screen
+          name="customer-register"
+          options={{ headerShown: false, presentation: "modal", gestureEnabled: false }}
+        />
+        <Stack.Screen name="pin-lock" options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="edit-address" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen name="delete-account" options={{ headerShown: false, presentation: "modal", gestureEnabled: false }} />
+      </Stack.Protected>
+      <Stack.Protected guard={!isAuthenticated && !parkedAccount}>
+        <Stack.Screen
+          name="login"
+          options={{ headerShown: false, presentation: "modal", gestureEnabled: false }}
+        />
+      </Stack.Protected>
+      <Stack.Protected guard={!isAuthenticated && !!parkedAccount}>
+        <Stack.Screen name="account-tile" options={{ headerShown: false, gestureEnabled: false }} />
+      </Stack.Protected>
       <Stack.Screen name="legal" options={{ headerShown: false, presentation: "modal" }} />
-      <Stack.Screen name="delete-account" options={{ headerShown: false, presentation: "modal", gestureEnabled: false }} />
       <Stack.Screen name="+not-found" />
     </Stack>
   );
@@ -85,29 +103,12 @@ function PinLockOverlay() {
   return <PinLockScreen />;
 }
 
-/**
- * vC16 Task A — Account tile overlay (soft sign-out re-entry).
- * Renders full-screen when there's a parked account and no live session.
- * Native-only (same as PinLockOverlay — web bypass).
- */
-function AccountTileOverlay() {
-  const { isAuthenticated, parkedAccount } = useAuth();
-  if (Platform.OS === 'web') return null;
-  // Show the account tile when there's a parked account and no live session.
-  // Once the session is resumed, isAuthenticated becomes true and the tile
-  // disappears.
-  if (!parkedAccount) return null;
-  if (isAuthenticated) return null;
-  return <AccountTileScreen />;
-}
-
 export default function RootLayout() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
 
   useEffect(() => {
     loadMyanmarFonts().finally(() => {
       setFontsLoaded(true);
-      SplashScreen.hideAsync();
     });
   }, []);
 
@@ -125,7 +126,6 @@ export default function RootLayout() {
               <I18nProvider>
                 <RootLayoutNav />
                 <PinLockOverlay />
-                <AccountTileOverlay />
               </I18nProvider>
             </OrderProvider>
           </AuthProvider>

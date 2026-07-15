@@ -60,19 +60,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   useEffect(() => {
     devLog('[Auth] Initializing Supabase auth listener');
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+    const sessionRestore = supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       devLog('[Auth] Got session:', currentSession ? 'yes' : 'no');
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
-      setIsLoading(false);
     });
 
     // vC16 Task A: check for a parked account (from a previous soft sign-out).
     // The session is in SecureStore; the account metadata tells us the phone.
     // We load it so the account tile overlay can render — but we do NOT restore
     // the session until PIN is entered.
-    if (Platform.OS !== 'web') {
-      SecureStore.getItemAsync(PARKED_ACCOUNT_KEY).then((stored) => {
+    const parkedAccountRestore = Platform.OS !== 'web'
+      ? SecureStore.getItemAsync(PARKED_ACCOUNT_KEY).then((stored) => {
         if (stored) {
           try {
             const parsed = JSON.parse(stored) as ParkedAccount;
@@ -80,8 +79,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             setParkedAccount(parsed);
           } catch {}
         }
-      }).catch(() => {});
-    }
+      }).catch(() => {})
+      : Promise.resolve();
+
+    // Auth routing must wait for both sources. Otherwise a parked account can
+    // briefly fall through to the OTP screen, or protected tabs can mount
+    // before the app knows that no live session exists.
+    Promise.allSettled([sessionRestore, parkedAccountRestore]).then(() => {
+      setIsLoading(false);
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
       devLog('[Auth] Auth state changed:', _event);
