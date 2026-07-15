@@ -23,9 +23,9 @@ let mmFontsReady = false;
 async function loadMyanmarFonts() {
   try {
     await Font.loadAsync({
-      'NotoSansMyanmar-Regular': require('./assets/fonts/NotoSansMyanmar-Regular.ttf'),
-      'NotoSansMyanmar-Medium': require('./assets/fonts/NotoSansMyanmar-Medium.ttf'),
-      'NotoSansMyanmar-Bold': require('./assets/fonts/NotoSansMyanmar-Bold.ttf'),
+      'NotoSansMyanmar-Regular': require('../assets/fonts/NotoSansMyanmar-Regular.ttf'),
+      'NotoSansMyanmar-Medium': require('../assets/fonts/NotoSansMyanmar-Medium.ttf'),
+      'NotoSansMyanmar-Bold': require('../assets/fonts/NotoSansMyanmar-Bold.ttf'),
     });
     mmFontsReady = true;
   } catch (e) {

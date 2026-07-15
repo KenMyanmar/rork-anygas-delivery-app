@@ -7,7 +7,6 @@ import {
   ScrollView,
   Animated as RNAnimated,
   Platform,
-  ActivityIndicator,
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,21 +15,12 @@ import { Flame, MapPin, ChevronRight, Package, Truck, RefreshCw } from 'lucide-r
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useOrders } from '@/providers/OrderProvider';
 import { OrderStatus } from '@/types';
 import { fetchCatalog, displayBrandName } from '@/lib/catalog';
 import { useI18n } from '@/providers/I18nProvider';
-import { ScalePressable, Skeleton, useReduceMotion } from '@/lib/motion';
-
-interface SupabaseBrand {
-  id: string;
-  name: string;
-  logo_url: string | null;
-  sort_order: number | null;
-}
 
 const BRAND_COLORS: Record<string, string> = {
   'Parami': '#DC2626',
@@ -173,10 +163,10 @@ export default function HomeScreen() {
             )}
 
             {activeOrder && (
-              <Animated.View entering={FadeInDown.springify().damping(18).stiffness(180)}>
-              <ScalePressable
+              <TouchableOpacity
                 style={styles.activeOrderCard}
                 onPress={handleTrackOrder}
+                activeOpacity={0.85}
               >
                 <View style={styles.activeOrderHeader}>
                   <Truck size={18} color={Colors.primary} />
@@ -202,16 +192,15 @@ export default function HomeScreen() {
                   <Text style={styles.trackButtonText}>{t('track_order')}</Text>
                   <ChevronRight size={16} color={Colors.primary} />
                 </View>
-              </ScalePressable>
-              </Animated.View>
+              </TouchableOpacity>
             )}
 
             <RNAnimated.View style={{ transform: [{ scale: pulseAnim }] }}>
-              <ScalePressable
+              <TouchableOpacity
                 style={styles.heroButton}
                 onPress={handleOrderNow}
                 testID="order-gas-button"
-                pressScale={0.98}
+                activeOpacity={0.88}
               >
                 <View style={styles.heroIconWrap}>
                   <Flame size={36} color="#FFFFFF" strokeWidth={2} />
@@ -219,17 +208,18 @@ export default function HomeScreen() {
                 <Text style={styles.heroTitle}>{isMM ? 'အခုပဲ မှာယူပါ' : 'ORDER GAS NOW'}</Text>
                 <Text style={styles.heroTitleMM}>{tMM('order_gas_now')}</Text>
                 <Text style={styles.heroSubtitle}>{t('fast_delivery')}</Text>
-              </ScalePressable>
+              </TouchableOpacity>
             </RNAnimated.View>
 
             {lastOrder && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{t('quick_reorder')}</Text>
                 <Text style={styles.sectionTitleMM}>{tMM('quick_reorder')}</Text>
-                <ScalePressable
+                <TouchableOpacity
                   style={styles.reorderCard}
                   onPress={handleReorder}
                   testID="reorder-button"
+                  activeOpacity={0.85}
                 >
                   <View style={styles.reorderLeft}>
                     <View style={[styles.brandDot, { backgroundColor: Colors.primary }]} />
@@ -253,7 +243,7 @@ export default function HomeScreen() {
                     <RefreshCw size={18} color={Colors.primary} />
                     <Text style={styles.reorderButtonText}>{t('quick_reorder')}</Text>
                   </View>
-                </ScalePressable>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -264,22 +254,22 @@ export default function HomeScreen() {
                 <View style={styles.brandsRow}>
                   {[1, 2, 3].map((i) => (
                     <View key={i} style={styles.brandCard}>
-                      <Skeleton width={48} height={48} borderRadius={12} style={{ marginBottom: 10 }} />
-                      <Skeleton width={50} height={12} />
+                      <View style={[styles.skeletonBlock, styles.skeletonLogo]} />
+                      <View style={[styles.skeletonBlock, styles.skeletonLabel]} />
                     </View>
                   ))}
                 </View>
               ) : (
                 <View style={styles.brandsRow}>
-                  {brands.map((brand, brandIdx) => {
+                  {brands.map((brand) => {
                     const color = getBrandColor(brand.name);
                     const displayName = displayBrandName(brand.name);
                     return (
-                      <ScalePressable
+                      <TouchableOpacity
                         key={brand.id}
                         style={styles.brandCard}
                         onPress={handleOrderNow}
-                        entering={FadeInDown.delay(Math.min(brandIdx, 6) * 40).springify().damping(18).stiffness(180)}
+                        activeOpacity={0.82}
                       >
                         {brand.logo_url ? (
                           <Image
@@ -293,7 +283,7 @@ export default function HomeScreen() {
                           </View>
                         )}
                         <Text style={styles.brandName}>{displayName}</Text>
-                      </ScalePressable>
+                      </TouchableOpacity>
                     );
                   })}
                 </View>
@@ -553,6 +543,20 @@ const styles = StyleSheet.create({
   brandsLoading: {
     paddingVertical: 20,
     alignItems: 'center',
+  },
+  skeletonBlock: {
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  skeletonLogo: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  skeletonLabel: {
+    width: 50,
+    height: 12,
+    borderRadius: 8,
   },
   brandsRow: {
     flexDirection: 'row',
